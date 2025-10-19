@@ -1,9 +1,6 @@
 // js/app.js
-// Этап 3.1–3.7: роутер, шаблоны, редактор расписания, календарь, UX-полировка (без хоткеев)
-//
-// Стандарты: 2 пробела, строки ≤ 100, одинарные кавычки, малые функции, комментарии «зачем».
-// Источники правил: Coding Standards v1.0 и «Структура директорий…» :contentReference[oaicite:4]{index=4} :contentReference[oaicite:5]{index=5}
-
+// Этап 3.1–3.7: роутер, шаблоны, редактор расписания, календарь, UX-полировка
+// Доработка логики: авто-подстановка дефолтного расписания из шаблона дня недели
 'use strict';
 
 /* ==============================
@@ -21,19 +18,16 @@ import { renderStats, renderTasks } from './ui.js';
 
 const STATE_STORAGE_KEY = 'planner.state.v1';
 const VIEWS = ['dashboard', 'schedule', 'calendar'];
-const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-// Верхнее меню
 const btnToday = document.querySelector('[data-action="today"]');
 const btnSchedule = document.querySelector('[data-action="schedule"]');
 const btnCalendar = document.querySelector('[data-action="calendar"]');
 
-// Экраны
 const viewDashboard = document.querySelector('[data-view="dashboard"]');
-const viewSchedule = document.querySelector('[data-view="schedule"]');
-const viewCalendar = document.querySelector('[data-view="calendar"]');
+const viewSchedule  = document.querySelector('[data-view="schedule"]');
+const viewCalendar  = document.querySelector('[data-view="calendar"]');
 
-// Редактор расписания
+// Schedule UI
 const weekdaySwitch = document.querySelector('.weekday-switch');
 const scheduleListEl = document.querySelector('[data-schedule-list]');
 const btnAddRow = document.querySelector('[data-schedule-add]');
@@ -42,11 +36,11 @@ const btnApplyTemplate = document.querySelector('[data-apply-template]');
 const elSchedCount = document.querySelector('[data-sched-count]');
 const elSchedTotal = document.querySelector('[data-sched-total]');
 
-// Календарь
-const calPrevBtn = document.querySelector('[data-cal-prev]');
-const calNextBtn = document.querySelector('[data-cal-next]');
-const calLabelEl = document.querySelector('[data-cal-label]');
-const calGridEl = document.querySelector('[data-cal-grid]');
+// Calendar UI
+const calPrevBtn  = document.querySelector('[data-cal-prev]');
+const calNextBtn  = document.querySelector('[data-cal-next]');
+const calLabelEl  = document.querySelector('[data-cal-label]');
+const calGridEl   = document.querySelector('[data-cal-grid]');
 
 // Toast
 const toastEl = document.querySelector('[data-toast]');
@@ -57,27 +51,21 @@ const toastEl = document.querySelector('[data-toast]');
 
 let state = null;
 let scheduleCurrentWeekday = 'mon';
-
-// Текущая сетка календаря (год/месяц)
-let calYear = null;
+let calYear  = null;
 let calMonth = null;
 
 /* ==============================
-   Вспомогательные функции UI
+   Вспомогательное UI
    ============================== */
 
-/** Показывает короткое всплывающее сообщение снизу. */
 function showToast(message = '', ms = 1800) {
   if (!toastEl) return;
   toastEl.textContent = message;
   toastEl.style.display = 'block';
   clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => {
-    toastEl.style.display = 'none';
-  }, ms);
+  showToast._t = setTimeout(() => (toastEl.style.display = 'none'), ms);
 }
 
-/** Подсвечивает активную вкладку в верхнем меню. */
 function setActiveNav(viewName) {
   const map = { dashboard: btnToday, schedule: btnSchedule, calendar: btnCalendar };
   [btnToday, btnSchedule, btnCalendar].forEach((el) => {
@@ -87,23 +75,20 @@ function setActiveNav(viewName) {
 }
 
 /* ==============================
-   Данные дня (дашборд)
+   Данные дня
    ============================== */
 
-/** Гарантирует существование блока дня в состоянии. */
 function ensureDay(dateKey) {
   if (!state.days) state.days = {};
   if (!state.days[dateKey]) state.days[dateKey] = { tasks: [] };
 }
 
-/** Возвращает массив задач на день. */
 function getTasksForDate(dateKey) {
   ensureDay(dateKey);
   const day = state.days[dateKey];
   return Array.isArray(day.tasks) ? day.tasks : (day.tasks = []);
 }
 
-/** Меняет выбранную дату (перерисовывает дашборд при необходимости). */
 function setSelectedDate(dateKey) {
   const d = parseDateKey(dateKey);
   state.selectedDate = toDateKey(d);
@@ -115,16 +100,12 @@ function setSelectedDate(dateKey) {
    Роутер
    ============================== */
 
-/** Прячет все экраны и показывает выбранный. */
 function showOnly(viewName) {
-  [viewDashboard, viewSchedule, viewCalendar].forEach((el) => {
-    if (el) el.hidden = true;
-  });
+  [viewDashboard, viewSchedule, viewCalendar].forEach((el) => el && (el.hidden = true));
   const map = { dashboard: viewDashboard, schedule: viewSchedule, calendar: viewCalendar };
   if (map[viewName]) map[viewName].hidden = false;
 }
 
-/** Переключает экран и запускает его рендер. */
 function switchView(viewName) {
   if (!VIEWS.includes(viewName)) {
     console.warn('[planner] switchView: unknown view', viewName);
@@ -141,106 +122,7 @@ function switchView(viewName) {
 }
 
 /* ==============================
-   Seed для дашборда (демо-данные при пустоте)
-   ============================== */
-
-function makeId(prefix = 't') {
-  const rnd = Math.floor(Math.random() * 1e6);
-  return `${prefix}_${Date.now().toString(36)}_${rnd.toString(36)}`;
-}
-
-function isGloballyEmpty(stateObj) {
-  if (!stateObj || !stateObj.days) return true;
-  for (const key of Object.keys(stateObj.days)) {
-    const tasks = stateObj.days[key]?.tasks;
-    if (Array.isArray(tasks)) {
-      for (const t of tasks) {
-        const planned = Number.isFinite(+t?.minutesPlanned) ? +t.minutesPlanned : 0;
-        if (planned > 0) return false;
-      }
-    }
-  }
-  return true;
-}
-
-function seedForDate(dateKey) {
-  state.days[dateKey].tasks = [
-    {
-      id: makeId('m'),
-      title: 'Математика: №1–5',
-      minutesPlanned: 40,
-      minutesDone: 0,
-      isDone: false
-    },
-    {
-      id: makeId('ph'),
-      title: 'Физика: §8 конспект',
-      minutesPlanned: 25,
-      minutesDone: 0,
-      isDone: false
-    },
-    {
-      id: makeId('ru'),
-      title: 'Русский: упр. 134 (1–3)',
-      minutesPlanned: 20,
-      minutesDone: 0,
-      isDone: false
-    }
-  ];
-}
-
-/** Добавляет демо-данные в пустой день/пустое приложение. */
-function robustSeedIfNeeded(dateKey) {
-  const tasks = getTasksForDate(dateKey);
-  const nothingHere = !Array.isArray(tasks) || tasks.length === 0;
-  if (nothingHere || isGloballyEmpty(state)) {
-    console.info('[planner] seed: demo tasks for', dateKey);
-    seedForDate(dateKey);
-    saveState(state);
-  }
-}
-
-/* ==============================
-   Рендер дашборда
-   ============================== */
-
-function makeDayLabel(dateKey) {
-  const d = parseDateKey(dateKey);
-  return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
-}
-
-/** Обработчик переключателя «выполнено». */
-function handleToggleTask(id, isDone) {
-  const tasks = getTasksForDate(state.selectedDate);
-  for (const t of tasks) {
-    if (t.id === id) {
-      t.isDone = !!isDone;
-      if (t.isDone) {
-        const planned = Number.isFinite(+t.minutesPlanned)
-          ? Math.max(0, Math.floor(+t.minutesPlanned))
-          : 0;
-        t.minutesDone = planned;
-      }
-      break;
-    }
-  }
-  saveState(state);
-  renderAll();
-}
-
-/** Перерисовывает показатели и список задач. */
-function renderAll() {
-  const dateKey = state.selectedDate;
-  const tasks = getTasksForDate(dateKey);
-  const totals = computeTotals(tasks);
-  const eta = etaFromNow(tasks);
-
-  renderStats(totals, eta);
-  renderTasks(tasks, { onToggle: handleToggleTask }, makeDayLabel(dateKey));
-}
-
-/* ==============================
-   3.2 — Шаблоны расписания (state)
+   Шаблоны расписания
    ============================== */
 
 function makeEmptyScheduleTemplates() {
@@ -274,23 +156,24 @@ function normalizeTemplateTask(t) {
   return { title, minutesPlanned: mp };
 }
 
-function getTemplate(weekday) {
+function getTemplate(weekdayKey) {
   ensureScheduleTemplates();
-  const day = state.scheduleTemplates[weekday];
+  const day = state.scheduleTemplates[weekdayKey];
   const arr = Array.isArray(day?.tasks) ? day.tasks : [];
   return arr.map(normalizeTemplateTask);
 }
 
-function setTemplate(weekday, tasks) {
+function setTemplate(weekdayKey, tasks) {
   ensureScheduleTemplates();
   const safe = Array.isArray(tasks) ? tasks.map(normalizeTemplateTask) : [];
-  state.scheduleTemplates[weekday] = { tasks: safe };
+  state.scheduleTemplates[weekdayKey] = { tasks: safe };
   saveState(state);
 }
 
-function applyTemplateToDate(weekday, dateKey) {
+/** Применяет шаблон (копией) в конкретную дату — «материализует» задачи. */
+function applyTemplateToDate(weekdayKey, dateKey) {
   ensureDay(dateKey);
-  const tpl = getTemplate(weekday);
+  const tpl = getTemplate(weekdayKey);
   state.days[dateKey].tasks = tpl.map((t) => ({
     id: makeId('x'),
     title: t.title,
@@ -302,10 +185,115 @@ function applyTemplateToDate(weekday, dateKey) {
 }
 
 /* ==============================
-   3.3–3.7 — Редактор расписания (UI)
+   NEW: эффективные задачи дня
    ============================== */
 
-/** Создаёт/находит баннер ошибок внизу экрана «Расписание». */
+/**
+ * Возвращает фактический список задач для даты.
+ * Если у даты нет своих задач — строит «виртуальные» задачи из шаблона дня недели.
+ * ВАЖНО: «виртуальные» задачи не сохраняются в state, пока пользователь не начнёт их менять.
+ */
+function getEffectiveTasks(dateKey) {
+  const own = getTasksForDate(dateKey);
+  if (Array.isArray(own) && own.length > 0) return own;
+
+  const d = parseDateKey(dateKey);
+  const jsDay = d.getDay(); // 0..6, 0=Вс
+  const map = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const weekdayKey = map[jsDay];
+
+  // строим «виртуальные» id, чтобы чекбоксы в UI были стабильными
+  const tpl = getTemplate(weekdayKey);
+  return tpl.map((t, idx) => ({
+    id: `virt_${weekdayKey}_${idx}`,
+    title: t.title,
+    minutesPlanned: t.minutesPlanned,
+    minutesDone: 0,
+    isDone: false,
+    _virtual: true,          // маркер: это НЕ материализовано в state.days[dateKey]
+    _weekdayKey: weekdayKey  // пригодится, если надо материализовать по действию
+  }));
+}
+
+/* ==============================
+   Seed для демо (не влияет на шаблоны)
+   ============================== */
+
+function makeId(prefix = 't') {
+  const rnd = Math.floor(Math.random() * 1e6);
+  return `${prefix}_${Date.now().toString(36)}_${rnd.toString(36)}`;
+}
+
+/* ==============================
+   Рендер дашборда
+   ============================== */
+
+function makeDayLabel(dateKey) {
+  const d = parseDateKey(dateKey);
+  return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/**
+ * Отметка «выполнено».
+ * Если пользователь кликнул по «виртуальной» задаче из шаблона —
+ * сначала материализуем шаблон в дату, потом повторим действие.
+ */
+function handleToggleTask(id, isDone) {
+  const dateKey = state.selectedDate;
+  let tasks = getTasksForDate(dateKey);
+
+  // Случай A: дата уже материализована — обычная логика
+  if (tasks.length > 0) {
+    for (const t of tasks) {
+      if (t.id === id) {
+        t.isDone = !!isDone;
+        if (t.isDone) {
+          const planned = Number.isFinite(+t.minutesPlanned)
+            ? Math.max(0, Math.floor(+t.minutesPlanned))
+            : 0;
+          t.minutesDone = planned;
+        }
+        break;
+      }
+    }
+    saveState(state);
+    renderAll();
+    return;
+  }
+
+  // Случай B: клик по «виртуальной» задаче из шаблона
+  const effective = getEffectiveTasks(dateKey);
+  const target = effective.find((t) => t.id === id);
+  if (target && target._virtual) {
+    // 1) материализуем весь шаблон в дату
+    applyTemplateToDate(target._weekdayKey, dateKey);
+    // 2) повторим действие уже на реальных задачах
+    tasks = getTasksForDate(dateKey);
+    const real = tasks.find((t) => t.title === target.title && t.minutesPlanned === target.minutesPlanned);
+    if (real) {
+      real.isDone = !!isDone;
+      real.minutesDone = real.isDone ? Math.max(0, Math.floor(+real.minutesPlanned || 0)) : 0;
+      saveState(state);
+    }
+    renderAll();
+  }
+}
+
+/** Главный рендер: считаем метрики по «эффективным» задачам и рисуем список. */
+function renderAll() {
+  const dateKey = state.selectedDate;
+  const tasksEff = getEffectiveTasks(dateKey);
+  const totals = computeTotals(tasksEff);
+  const eta = etaFromNow(tasksEff);
+
+  renderStats(totals, eta);
+  renderTasks(tasksEff, { onToggle: handleToggleTask }, makeDayLabel(dateKey));
+}
+
+/* ==============================
+   3.3–3.7 — редактор расписания (без изменений по сути)
+   ============================== */
+
 function ensureErrorBanner() {
   if (!viewSchedule) return null;
   let banner = viewSchedule.querySelector('[data-schedule-errors]');
@@ -319,7 +307,6 @@ function ensureErrorBanner() {
   return banner;
 }
 
-/** Показывает/скрывает сообщения об ошибках. */
 function showErrors(messages = []) {
   const banner = ensureErrorBanner();
   if (!banner) return;
@@ -328,37 +315,29 @@ function showErrors(messages = []) {
   banner.textContent = has ? messages.join(' · ') : '';
 }
 
-/** Подсвечивает поле ввода как невалидное. */
 function markInvalid(input, invalid) {
   if (!input) return;
   input.classList.toggle('invalid', !!invalid);
 }
 
-/** Очищает ввод минут от нецифровых символов, нормализует в целое ≥ 0. */
 function bindMinutesSanitizer(inputNumber) {
   if (!inputNumber || inputNumber.dataset.sanitizerBound) return;
-
   inputNumber.addEventListener('input', () => {
     inputNumber.value = String(inputNumber.value).replace(/[^\d]/g, '');
   });
-
   inputNumber.addEventListener('blur', () => {
     const n = Math.max(0, Math.floor(Number(inputNumber.value || 0)));
     inputNumber.value = String(n);
   });
-
-  // UX: Enter в поле «мин» добавляет новую строку
   inputNumber.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && btnAddRow) {
       e.preventDefault();
       btnAddRow.click();
     }
   });
-
   inputNumber.dataset.sanitizerBound = '1';
 }
 
-/** Рисует строки редактирования для выбранного дня недели. */
 function renderScheduleRows(weekday) {
   if (!scheduleListEl) return;
   scheduleListEl.innerHTML = '';
@@ -405,7 +384,6 @@ function renderScheduleRows(weekday) {
   updateScheduleSummary();
 }
 
-/** Проверяет одну строку и возвращает нормализованные данные/ошибки. */
 function validateRow(row) {
   const [inputTitle, inputMinutes] = row.querySelectorAll('input');
   const title = String(inputTitle?.value ?? '').trim();
@@ -421,7 +399,6 @@ function validateRow(row) {
   return { ok: errs.length === 0, title, minutes, errors: errs };
 }
 
-/** Собирает и валидирует все строки редактора. */
 function collectAndValidateTemplate() {
   const rows = Array.from(scheduleListEl?.querySelectorAll('.schedule-row') || []);
   const validTasks = [];
@@ -448,7 +425,6 @@ function collectAndValidateTemplate() {
   return { validTasks, messages };
 }
 
-/** Считает «N строк • M мин» и выводит снизу редактора. */
 function updateScheduleSummary() {
   const rows = Array.from(scheduleListEl?.querySelectorAll('.schedule-row') || []);
   let count = 0;
@@ -468,7 +444,6 @@ function updateScheduleSummary() {
   if (elSchedTotal) elSchedTotal.textContent = `${total} мин`;
 }
 
-/** Подсветка активной кнопки дня недели. */
 function highlightActiveWeekday() {
   if (!weekdaySwitch) return;
   const buttons = weekdaySwitch.querySelectorAll('button[data-weekday]');
@@ -477,7 +452,6 @@ function highlightActiveWeekday() {
   });
 }
 
-/** Полный рендер и биндинг редактора расписания. */
 function renderScheduleEditor() {
   if (!viewSchedule) return;
 
@@ -559,7 +533,6 @@ function renderScheduleEditor() {
 
   if (btnApplyTemplate && !btnApplyTemplate.dataset.bound) {
     btnApplyTemplate.addEventListener('click', () => {
-      // Валидация перед применением
       const { validTasks, messages } = collectAndValidateTemplate();
       if (messages.length) {
         showErrors(messages);
@@ -571,15 +544,12 @@ function renderScheduleEditor() {
         return;
       }
 
-      // Подтверждение, если в выбранной дате уже есть задачи
       const dateKey = state.selectedDate;
       const existing = getTasksForDate(dateKey);
       const hasData = Array.isArray(existing) && existing.length > 0;
       let ok = true;
       if (hasData) {
-        ok = window.confirm(
-          'Переписать задачи выбранной даты по шаблону? Текущее содержимое будет заменено.'
-        );
+        ok = window.confirm('Переписать задачи выбранной даты по шаблону? Текущее содержимое будет заменено.');
       }
       if (!ok) return;
 
@@ -593,7 +563,6 @@ function renderScheduleEditor() {
     btnApplyTemplate.dataset.bound = '1';
   }
 
-  // Живой пересчёт summary при вводе
   if (!scheduleListEl.dataset.summaryBound) {
     scheduleListEl.addEventListener('input', (e) => {
       if (e.target && e.target.tagName === 'INPUT') updateScheduleSummary();
@@ -603,15 +572,14 @@ function renderScheduleEditor() {
 }
 
 /* ==============================
-   3.5 — Календарь
+   Календарь
    ============================== */
 
 function weekdayMonFirst(date) {
-  const js = date.getDay(); // 0..6, 0 = Вс
-  return js === 0 ? 7 : js; // 1..7, 1 = Пн
+  const js = date.getDay(); // 0..6, 0=Вс
+  return js === 0 ? 7 : js; // 1..7, 1=Пн
 }
 
-/** Перерисовывает сетку календаря для выбранного месяца. */
 function renderCalendar() {
   if (!calGridEl || calYear == null || calMonth == null) return;
 
@@ -652,7 +620,6 @@ function renderCalendar() {
   }
 }
 
-/** Открывает календарь на месяце выбранной даты. */
 function openCalendarForSelectedDate() {
   const base = parseDateKey(state.selectedDate ?? toDateKey(getToday()));
   calYear = base.getFullYear();
@@ -661,12 +628,8 @@ function openCalendarForSelectedDate() {
 
   if (calPrevBtn && !calPrevBtn.dataset.bound) {
     calPrevBtn.addEventListener('click', () => {
-      if (calMonth === 0) {
-        calMonth = 11;
-        calYear -= 1;
-      } else {
-        calMonth -= 1;
-      }
+      if (calMonth === 0) { calMonth = 11; calYear -= 1; }
+      else { calMonth -= 1; }
       renderCalendar();
     });
     calPrevBtn.dataset.bound = '1';
@@ -674,12 +637,8 @@ function openCalendarForSelectedDate() {
 
   if (calNextBtn && !calNextBtn.dataset.bound) {
     calNextBtn.addEventListener('click', () => {
-      if (calMonth === 11) {
-        calMonth = 0;
-        calYear += 1;
-      } else {
-        calMonth += 1;
-      }
+      if (calMonth === 11) { calMonth = 0; calYear += 1; }
+      else { calMonth += 1; }
       renderCalendar();
     });
     calNextBtn.dataset.bound = '1';
@@ -690,7 +649,6 @@ function openCalendarForSelectedDate() {
    Инициализация
    ============================== */
 
-/** Сброс состояния через параметр ?reset=1. */
 function resetIfRequested() {
   const params = new URLSearchParams(window.location.search);
   if (params.get('reset') === '1') {
@@ -703,7 +661,6 @@ function resetIfRequested() {
   }
 }
 
-/** Создаёт начальное состояние приложения. */
 function initState() {
   const defaults = {
     selectedDate: null,
@@ -711,7 +668,6 @@ function initState() {
     currentView: 'dashboard',
     scheduleTemplates: makeEmptyScheduleTemplates()
   };
-
   state = loadState(defaults);
 
   if (!state.selectedDate) {
@@ -721,12 +677,12 @@ function initState() {
     console.info('[planner] init: selectedDate ->', tomorrowKey);
   }
 
-  ensureDay(state.selectedDate);
+  // шаблоны должны существовать (могут быть пустыми по умолчанию)
   ensureScheduleTemplates();
-  robustSeedIfNeeded(state.selectedDate);
+
+  // отдельного seed по датам не делаем — теперь «вид по умолчанию» идёт из шаблона
 }
 
-/** Навигация верхнего меню. */
 function initNavHandlers() {
   if (btnToday) {
     btnToday.addEventListener('click', () => {
@@ -746,7 +702,6 @@ function initNavHandlers() {
   }
 }
 
-/** Точка входа. */
 function bootstrap() {
   resetIfRequested();
   initState();
