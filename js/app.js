@@ -1,74 +1,196 @@
-"use strict";
-// Этап 1 — Шаг 5: stateless-инициализация + базовая навигация (без памяти).
-// При каждом запуске ВСЕГДА показываем дашборд (Сегодня).
+// js/app.js
+// Точка входа «Лёшин планировщик».
+// Здесь мы связываем: хранилище (storage) -> даты (date) -> вычисления (compute) -> UI (ui).
+// Важно: этот модуль работает как ES-модуль; в index.html должен быть <script type="module" src="js/app.js"></script>
 
-import { toDateKey, getToday } from "./date.js";
-import { computeTotals } from "./compute.js";
-import { renderStats, bindNav, openDashboard } from "./ui.js";
+'use strict';
 
-// Состояние текущей вкладки (живет, пока открыта страница)
-const DEFAULT_STATE = {
-  tasks: [],
-  lastOpened: toDateKey(getToday()),
-};
+/* ==============================
+   Импорты модулей (логика)
+   ============================== */
 
-function clone(obj) {
-  return (typeof structuredClone === "function")
-    ? structuredClone(obj)
-    : JSON.parse(JSON.stringify(obj));
-}
+import { loadState, saveState } from './storage.js';
+import { toDateKey, parseDateKey, getToday, getTomorrow } from './date.js';
+import { computeTotals, etaFromNow } from './compute.js';
+import { renderStats, renderTasks } from './ui.js';
 
-function normalizeStats(raw) {
-  const total = (raw && (raw.total ?? raw.planned)) ?? 0;
-  const done  = (raw && raw.done) ?? 0;
-  const left  = (raw && (raw.left ?? raw.remaining)) ?? Math.max(0, total - done);
-  const eta   = (raw && raw.eta) ?? null;
-  return { total, done, left, eta };
-}
+/* ==============================
+   Базовые переменные приложения
+   ============================== */
 
-function init() {
-  console.log("[planner] init() — stateless + nav");
+// Состояние приложения (в LocalStorage лежит объект { selectedDate, days })
+let state = null;
 
-  // 1) Чистое состояние
-  const state = clone(DEFAULT_STATE);
+// Небольшие селекторы для навигационных кнопок (стабы обработчиков)
+const btnToday = document.querySelector('[data-action="today"]');
+const btnSchedule = document.querySelector('[data-action="schedule"]');
+const btnCalendar = document.querySelector('[data-action="calendar"]');
 
-  // 2) Счёт показателей и первичный рендер дашборда
-  let stats = { total: 0, done: 0, left: 0, eta: null };
-  try {
-    const raw = computeTotals ? computeTotals(state.tasks) : null;
-    stats = normalizeStats(raw || stats);
-  } catch (e) {
-    console.warn("[planner] computeTotals failed; using zeros:", e);
+/* ==============================
+   Вспомогательные функции состояния
+   ============================== */
+
+/**
+ * Гарантирует, что в state.days есть запись для данной даты.
+ * Зачем: чтобы код дальше не падал на undefined.
+ */
+function ensureDay(dateKey) {
+  if (!state.days) state.days = {};
+  if (!state.days[dateKey]) {
+    state.days[dateKey] = { tasks: [] };
   }
-  renderStats(stats);
+}
 
-  // 3) Навигация: подписаться на кнопки и открыть Дашборд (правило продукта)
-  bindNav({
-    onToday: () => openDashboard(),
-    onSchedule: () => { /* позже подцепим реальный UI расписания */ },
-    onCalendar: () => { /* позже подцепим календарь */ },
+/**
+ * Получить массив задач для ключа даты (всегда массив).
+ */
+function getTasksForDate(dateKey) {
+  ensureDay(dateKey);
+  const day = state.days[dateKey];
+  return Array.isArray(day.tasks) ? day.tasks : (day.tasks = []);
+}
+
+/**
+ * Установить выбранную дату и перерисовать экран.
+ */
+function setSelectedDate(dateKey) {
+  // Мини-проверка корректности ключа
+  const d = parseDateKey(dateKey); // нормализуем к локальной полуночи
+  const normalizedKey = toDateKey(d);
+
+  state.selectedDate = normalizedKey;
+  saveState(state);
+  renderAll();
+}
+
+/* ==============================
+   Рендер всего экрана
+   ============================== */
+
+/**
+ * Возвращает человекочитаемую подпись дня (напр., "Понедельник, 20 октября").
+ */
+function makeDayLabel(dateKey) {
+  const d = parseDateKey(dateKey);
+  // Для начинающих: toLocaleDateString удобен для локализации.
+  // Попросим день недели, число и месяц (год опустим для краткости).
+  return d.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
   });
-  openDashboard(); // ВСЕГДА стартуем с дашборда
+}
 
-  // 4) Отладочные хелперы
-  window.__LP_STATE__ = state;
-  window.__LP_RECALC__ = () => {
-    try {
-      const raw = computeTotals ? computeTotals(state.tasks) : null;
-      const s = normalizeStats(raw || {});
-      renderStats(s);
-      // если сейчас открыт дашборд — значения обновятся на карточках
-      return s;
-    } catch (e) {
-      console.warn("[planner] recalc failed:", e);
-      const s = { total: 0, done: 0, left: 0, eta: null };
-      renderStats(s);
-      return s;
+/**
+ * Обработчик переключения чекбоксов задач.
+ * @param {string} id - id задачи
+ * @param {boolean} isDone - новое значение чекбокса
+ *
+ * Логика простая:
+ * - ставим task.isDone = isDone
+ * - если включили, minutesDone = minutesPlanned (считаем как полностью сделано)
+ * - если выключили, minutesDone не трогаем (или можно обнулить — на твой вкус)
+ */
+function handleToggleTask(id, isDone) {
+  const dateKey = state.selectedDate;
+  const tasks = getTasksForDate(dateKey);
+
+  for (const t of tasks) {
+    if (t.id === id) {
+      t.isDone = !!isDone;
+      if (t.isDone) {
+        const planned = Number.isFinite(+t.minutesPlanned) ? Math.max(0, Math.floor(+t.minutesPlanned)) : 0;
+        t.minutesDone = planned;
+      }
+      break;
     }
+  }
+
+  saveState(state);
+  renderAll(); // пересчёт метрик и обновление UI
+}
+
+/**
+ * Главная функция рендера дашборда.
+ * 1) Берём задачи выбранного дня
+ * 2) Считаем totals + eta
+ * 3) Обновляем верхние показатели и список задач
+ */
+function renderAll() {
+  const dateKey = state.selectedDate;
+  const tasks = getTasksForDate(dateKey);
+
+  const totals = computeTotals(tasks);
+  const eta = etaFromNow(tasks);
+
+  renderStats(totals, eta);
+  renderTasks(tasks, { onToggle: handleToggleTask }, makeDayLabel(dateKey));
+}
+
+/* ==============================
+   Инициализация приложения
+   ============================== */
+
+/**
+ * Инициализируем state из LocalStorage.
+ * Если state.selectedDate нет — по умолчанию ставим "завтра".
+ */
+function initState() {
+  // Значения по умолчанию на случай пустого хранилища
+  const defaults = {
+    selectedDate: null,
+    days: {},
   };
 
-  // На всякий случай подчистим возможные старые ключи LocalStorage
-  try { localStorage.removeItem("planner.state.v1"); } catch {}
+  state = loadState(defaults);
+
+  // Если дата не выбрана — возьмём завтра (по конвенции этапа 2)
+  if (!state.selectedDate) {
+    const tomorrowKey = toDateKey(getTomorrow());
+    state.selectedDate = tomorrowKey;
+    saveState(state);
+  }
+
+  // Подстрахуемся, что структура на выбранную дату существует
+  ensureDay(state.selectedDate);
 }
 
-init();
+/**
+ * Навешиваем обработчики на кнопки навигации.
+ * Сейчас это лёгкие стабы — полноценная логика появится на следующих этапах.
+ */
+function initNavHandlers() {
+  if (btnToday) {
+    btnToday.addEventListener('click', () => {
+      setSelectedDate(toDateKey(getToday()));
+    });
+  }
+
+  if (btnSchedule) {
+    btnSchedule.addEventListener('click', () => {
+      // TODO: откроем экран редактирования расписания (этап 3)
+      console.info('[planner] schedule: stub click (будет реализовано позже)');
+    });
+  }
+
+  if (btnCalendar) {
+    btnCalendar.addEventListener('click', () => {
+      // TODO: откроем календарь выбора даты (этап 3)
+      console.info('[planner] calendar: stub click (будет реализовано позже)');
+    });
+  }
+}
+
+/**
+ * Точка старта.
+ */
+function bootstrap() {
+  initState();
+  initNavHandlers();
+  renderAll();
+}
+
+// Запускаем приложение, когда DOM готов.
+// Для простоты вызовем сразу: модуль грузится после HTML, поэтому DOM уже есть.
+// Если подключение скрипта в <head>, тогда стоит повеситься на DOMContentLoaded.
+bootstrap();
