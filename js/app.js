@@ -1,15 +1,15 @@
 "use strict";
-// Этап 1 — Шаг 4: stateless-инициализация.
-// Ничего не сохраняем между сессиями. На каждый запуск — чистое состояние и дашборд.
+// Этап 1 — Шаг 5: stateless-инициализация + базовая навигация (без памяти).
+// При каждом запуске ВСЕГДА показываем дашборд (Сегодня).
 
 import { toDateKey, getToday } from "./date.js";
 import { computeTotals } from "./compute.js";
-import { renderStats } from "./ui.js";
+import { renderStats, bindNav, openDashboard } from "./ui.js";
 
-// Стартовое состояние текущей вкладки (живёт только пока открыта страница)
+// Состояние текущей вкладки (живет, пока открыта страница)
 const DEFAULT_STATE = {
-  tasks: [],                         // [{ minutes:number, done:boolean, ... }]
-  lastOpened: toDateKey(getToday()), // техническая метка на сегодня (локально)
+  tasks: [],
+  lastOpened: toDateKey(getToday()),
 };
 
 function clone(obj) {
@@ -19,7 +19,6 @@ function clone(obj) {
 }
 
 function normalizeStats(raw) {
-  // Поддержка вариантов { total, done, left, eta } / { planned, done, remaining, eta }
   const total = (raw && (raw.total ?? raw.planned)) ?? 0;
   const done  = (raw && raw.done) ?? 0;
   const left  = (raw && (raw.left ?? raw.remaining)) ?? Math.max(0, total - done);
@@ -28,12 +27,12 @@ function normalizeStats(raw) {
 }
 
 function init() {
-  console.log("[planner] init() — stateless");
+  console.log("[planner] init() — stateless + nav");
 
-  // 1) Чистое состояние на каждую загрузку
+  // 1) Чистое состояние
   const state = clone(DEFAULT_STATE);
 
-  // 2) Счёт показателей
+  // 2) Счёт показателей и первичный рендер дашборда
   let stats = { total: 0, done: 0, left: 0, eta: null };
   try {
     const raw = computeTotals ? computeTotals(state.tasks) : null;
@@ -41,21 +40,24 @@ function init() {
   } catch (e) {
     console.warn("[planner] computeTotals failed; using zeros:", e);
   }
-
-  // 3) Рендерим дашборд (карточки показателей)
   renderStats(stats);
 
-  // 4) Отладочные хелперы (живут только в этой вкладке — не сохраняются)
-  // Пример:
-  //   window.__LP_STATE__.tasks.push({ minutes: 40, done: true });
-  //   window.__LP_STATE__.tasks.push({ minutes: 25, done: false });
-  //   window.__LP_RECALC__(); // карточки обновятся
+  // 3) Навигация: подписаться на кнопки и открыть Дашборд (правило продукта)
+  bindNav({
+    onToday: () => openDashboard(),
+    onSchedule: () => { /* позже подцепим реальный UI расписания */ },
+    onCalendar: () => { /* позже подцепим календарь */ },
+  });
+  openDashboard(); // ВСЕГДА стартуем с дашборда
+
+  // 4) Отладочные хелперы
   window.__LP_STATE__ = state;
   window.__LP_RECALC__ = () => {
     try {
       const raw = computeTotals ? computeTotals(state.tasks) : null;
       const s = normalizeStats(raw || {});
       renderStats(s);
+      // если сейчас открыт дашборд — значения обновятся на карточках
       return s;
     } catch (e) {
       console.warn("[planner] recalc failed:", e);
@@ -65,7 +67,7 @@ function init() {
     }
   };
 
-  // Если раньше что-то писали в LocalStorage — подчистим старый ключ (необязательно).
+  // На всякий случай подчистим возможные старые ключи LocalStorage
   try { localStorage.removeItem("planner.state.v1"); } catch {}
 }
 

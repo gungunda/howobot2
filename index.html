@@ -7,24 +7,40 @@
   <link rel="stylesheet" href="assets/styles.css" />
 </head>
 <body>
-  <section class="dashboard">
-    <header class="dashboard__header">
-      <h2 class="dashboard__title">Домашка на завтра</h2>
-      <nav class="dashboard__nav" aria-label="Навигация">
-        <button id="btn-today" class="btn">Сегодня</button>
-        <button id="btn-schedule" class="btn">Расписание</button>
-        <button id="btn-calendar" class="btn">Календарь</button>
-      </nav>
-    </header>
+  <h1>Лёшин планировщик</h1>
 
-    <div class="stats" role="region" aria-label="Показатели">
-      <div class="stat"><span>Общая нагрузка</span><strong id="stat-total">—</strong></div>
-      <div class="stat"><span>Выполнено</span><strong id="stat-done">—</strong></div>
-      <div class="stat"><span>Осталось</span><strong id="stat-left">—</strong></div>
-      <div class="stat"><span>Финиш-оценка</span><strong id="stat-eta">—</strong></div>
+  <!-- Навигация между разделами -->
+  <nav class="tabs" aria-label="Разделы">
+    <button id="btn-today" class="tab is-active" aria-current="page">Сегодня</button>
+    <button id="btn-schedule" class="tab">Расписание</button>
+    <button id="btn-calendar" class="tab">Календарь</button>
+  </nav>
+
+  <!-- Дашборд: карточки показателей -->
+  <section id="view-dashboard">
+    <div class="card">
+      <strong>Общая нагрузка</strong>
+      <div id="stat-total">—</div>
+    </div>
+    <div class="card">
+      <strong>Выполнено</strong>
+      <div id="stat-done">—</div>
+    </div>
+    <div class="card">
+      <strong>Осталось</strong>
+      <div id="stat-left">—</div>
+    </div>
+    <div class="card">
+      <strong>Финиш-оценка</strong>
+      <div id="stat-eta">—</div>
     </div>
   </section>
 
+  <!-- Плейсхолдеры для будущих экранов -->
+  <section id="view-schedule" hidden></section>
+  <section id="view-calendar" hidden></section>
+
+  <!-- Точка входа приложения -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
