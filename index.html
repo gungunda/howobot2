@@ -25,14 +25,27 @@
         </section>
 
         <section class="stats">
-          <div class="stat"><div class="stat-label">Общая нагрузка</div><div class="stat-value" data-stat="planned">0 мин</div></div>
-          <div class="stat"><div class="stat-label">Выполнено</div><div class="stat-value" data-stat="done">0 мин (0%)</div></div>
-          <div class="stat"><div class="stat-label">Осталось</div><div class="stat-value" data-stat="left">0 мин</div></div>
-          <div class="stat"><div class="stat-label">Финиш-оценка</div><div class="stat-value" data-stat="eta">—</div></div>
+          <div class="stat">
+            <div class="stat-label">Общая нагрузка</div>
+            <div class="stat-value" data-stat="planned">0 мин</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Выполнено</div>
+            <div class="stat-value" data-stat="done">0 мин (0%)</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Осталось</div>
+            <div class="stat-value" data-stat="left">0 мин</div>
+          </div>
+            <div class="stat-label">Финиш-оценка</div>
+            <div class="stat-value" data-stat="eta">—</div>
+          </div>
         </section>
 
         <section class="tasks">
-          <div class="tasks-empty" data-empty style="display:none;">Нет заданий на этот день.</div>
+          <div class="tasks-empty" data-empty style="display:none;">
+            Нет заданий на этот день.
+          </div>
           <div class="tasks-list" data-tasks></div>
         </section>
       </section>
@@ -59,13 +72,19 @@
             <div class="col-minutes">Мин</div>
             <div class="col-actions">Действия</div>
           </div>
-          <div class="schedule-list" data-schedule-list>
-            <!-- строки-шаблоны рендерятся app.js -->
-          </div>
+
+          <div class="schedule-list" data-schedule-list></div>
 
           <div class="schedule-controls">
-            <button type="button" class="btn" data-schedule-add>Добавить строку</button>
-            <button type="button" class="btn primary" data-schedule-save>Сохранить шаблон</button>
+            <button type="button" class="btn" data-schedule-add>
+              Добавить строку
+            </button>
+            <button type="button" class="btn" data-apply-template>
+              Применить этот шаблон к выбранной дате
+            </button>
+            <button type="button" class="btn primary" data-schedule-save>
+              Сохранить шаблон
+            </button>
           </div>
 
           <p class="muted small">
@@ -77,10 +96,13 @@
       <!-- ===== Calendar (выбор даты) ===== -->
       <section class="view" data-view="calendar" hidden>
         <h2>Календарь выбора даты</h2>
+
         <div class="calendar-placeholder card">
           <label class="small">Быстрый вариант:</label>
           <input type="date" data-pick-date />
-          <button type="button" class="btn" data-apply-picked>Открыть на дашборде</button>
+          <button type="button" class="btn" data-apply-picked>
+            Открыть на дашборде
+          </button>
         </div>
       </section>
     </main>

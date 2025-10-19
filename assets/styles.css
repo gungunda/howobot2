@@ -107,39 +107,161 @@ body {
 .task-title { overflow-wrap: anywhere; }
 .task-minutes { color: var(--muted); }
 
+/* === Views (экраны) === */
+.view[hidden] {
+  display: none;
+}
 
-/* --- Views --- */
-.view[hidden] { display: none; }
+.app-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
 
-.app-nav { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.muted { opacity: 0.75; }
-.small { font-size: 0.9rem; }
-.card { border: 1px solid #ddd; border-radius: 12px; padding: 12px 16px; background: #fafafa; }
+.muted {
+  opacity: 0.75;
+}
 
-/* --- Stats grid --- */
-.stats { display: grid; grid-template-columns: repeat(4, minmax(120px, 1fr)); gap: 12px; margin: 12px 0; }
-.stat { padding: 10px; border: 1px solid #eee; border-radius: 10px; background: #fff; }
-.stat-label { font-size: 0.9rem; opacity: 0.7; }
-.stat-value { font-weight: 600; margin-top: 4px; }
+.small {
+  font-size: 0.9rem;
+}
 
-/* --- Tasks list --- */
-.tasks-list .task-item { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px dashed #eee; }
-.task-item.done .task-title { text-decoration: line-through; opacity: 0.7; }
+.card {
+  background: #fafafa;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 12px 16px;
+}
 
-.btn { padding: 8px 12px; border: 1px solid #ccc; border-radius: 8px; background: #fff; cursor: pointer; }
-.btn.primary { background: #2255ff; color: #fff; border-color: #2255ff; }
+/* === Stats (четыре показателя) === */
+.stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  margin: 12px 0;
+}
 
-/* --- Schedule editor --- */
-.weekday-switch { display: flex; gap: 6px; margin: 8px 0 12px; }
-.weekday-switch button { padding: 6px 10px; border: 1px solid #ccc; background: #fff; border-radius: 8px; cursor: pointer; }
-.weekday-switch button.active { background: #2255ff; color: #fff; border-color: #2255ff; }
+.stat {
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+  padding: 10px;
+}
 
-.schedule-editor { margin-top: 8px; }
-.schedule-header { display: grid; grid-template-columns: 1fr 100px 100px; gap: 8px; font-weight: 600; margin-bottom: 6px; }
-.schedule-list { display: grid; gap: 6px; }
-.schedule-row { display: grid; grid-template-columns: 1fr 100px 100px; gap: 8px; align-items: center; }
-.schedule-row input[type="text"] { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
-.schedule-row input[type="number"] { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; }
-.schedule-row .row-actions { display: flex; gap: 6px; }
-.schedule-controls { display: flex; gap: 8px; margin-top: 10px; }
-.col-title, .col-minutes, .col-actions { opacity: 0.7; font-size: 0.9rem; }
+.stat-label {
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+
+.stat-value {
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* === Tasks list (список задач на день) === */
+.tasks-list .task-item {
+  align-items: center;
+  border-bottom: 1px dashed #eee;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 28px 1fr auto;
+  padding: 8px 10px;
+}
+
+.task-item.done .task-title {
+  opacity: 0.7;
+  text-decoration: line-through;
+}
+
+/* === Buttons === */
+.btn {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 8px 12px;
+}
+
+.btn.primary {
+  background: #2255ff;
+  border-color: #2255ff;
+  color: #fff;
+}
+
+/* === Schedule editor (редактор шаблонов) === */
+.weekday-switch {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.weekday-switch button {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+.weekday-switch button.active {
+  background: #2255ff;
+  border-color: #2255ff;
+  color: #fff;
+}
+
+.schedule-editor {
+  margin-top: 8px;
+}
+
+.schedule-header {
+  display: grid;
+  font-weight: 600;
+  gap: 8px;
+  grid-template-columns: 1fr 100px 100px;
+  margin-bottom: 6px;
+}
+
+.schedule-list {
+  display: grid;
+  gap: 6px;
+}
+
+.schedule-row {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 100px 100px;
+}
+
+.schedule-row input[type="text"] {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.schedule-row input[type="number"] {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.schedule-row .row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.schedule-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.col-title,
+.col-minutes,
+.col-actions {
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
