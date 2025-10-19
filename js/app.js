@@ -1,6 +1,7 @@
 // js/app.js
 // Точка входа «Лёшин планировщик».
-// Добавлен мини-роутер экранов: dashboard / schedule / calendar (этап 3.1).
+// Этап 3.1: мини-роутер (dashboard / schedule / calendar)
+// Этап 3.2: модель шаблонов расписания в state + хелперы (без UI логики)
 
 'use strict';
 
@@ -39,7 +40,7 @@ const viewCalendar  = document.querySelector('[data-view="calendar"]');
 let state = null;
 
 /* ==============================
-   Утилиты состояния дней
+   Утилиты состояния дней (дашборд)
    ============================== */
 
 function ensureDay(dateKey) {
@@ -68,12 +69,10 @@ function setSelectedDate(dateKey) {
    ============================== */
 
 function showOnly(viewName) {
-  // Спрячем все
   for (const el of [viewDashboard, viewSchedule, viewCalendar]) {
     if (!el) continue;
     el.hidden = true;
   }
-  // Покажем нужный
   const map = { dashboard: viewDashboard, schedule: viewSchedule, calendar: viewCalendar };
   const el = map[viewName];
   if (el) el.hidden = false;
@@ -87,13 +86,11 @@ function switchView(viewName) {
   state.currentView = viewName;
   saveState(state);
   showOnly(viewName);
-
-  // При входе на дашборд — перерисовать сводку
   if (viewName === 'dashboard') renderAll();
 }
 
 /* ==============================
-   Seed-данные (чтобы дашборд не был пустым)
+   Seed-данные для дашборда (чтобы не было пусто)
    ============================== */
 
 function makeId(prefix = 't') {
@@ -174,6 +171,110 @@ function renderAll() {
 }
 
 /* ==============================
+   Этап 3.2 — Модель шаблонов расписания
+   ============================== */
+
+/**
+ * Создаёт пустые шаблоны для 7 дней недели.
+ * Формат:
+ * scheduleTemplates = {
+ *   mon: { tasks: [ {title, minutesPlanned} ] },
+ *   tue: { tasks: [...] },
+ *   ... wed, thu, fri, sat, sun
+ * }
+ */
+function makeEmptyScheduleTemplates() {
+  return {
+    mon: { tasks: [] },
+    tue: { tasks: [] },
+    wed: { tasks: [] },
+    thu: { tasks: [] },
+    fri: { tasks: [] },
+    sat: { tasks: [] },
+    sun: { tasks: [] },
+  };
+}
+
+/**
+ * Гарантирует, что scheduleTemplates существует и имеет все 7 ключей.
+ */
+function ensureScheduleTemplates() {
+  if (!state.scheduleTemplates || typeof state.scheduleTemplates !== 'object') {
+    state.scheduleTemplates = makeEmptyScheduleTemplates();
+    return;
+  }
+  // Добьём отсутствующие ключи, если какие-то пропали
+  const defaults = makeEmptyScheduleTemplates();
+  for (const k of Object.keys(defaults)) {
+    if (!state.scheduleTemplates[k] || !Array.isArray(state.scheduleTemplates[k].tasks)) {
+      state.scheduleTemplates[k] = { tasks: [] };
+    }
+  }
+}
+
+/**
+ * Возвращает ключ дня недели ('mon'..'sun') для переданной даты.
+ * Для junior: getDay() в JS -> 0..6, где 0 = Воскресенье.
+ */
+function weekdayKeyFromDate(date) {
+  const d = new Date(date);
+  const js = d.getDay(); // 0..6 (0 = Sunday)
+  // Перекодируем в mon..sun
+  return ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][js];
+}
+
+/**
+ * Нормализует одну задачу шаблона (только title + minutesPlanned >= 0).
+ */
+function normalizeTemplateTask(t) {
+  if (!t || typeof t !== 'object') return { title: 'Задание', minutesPlanned: 0 };
+  const title = String(t.title ?? '').trim() || 'Задание';
+  const mp = Number.isFinite(+t.minutesPlanned) ? Math.max(0, Math.floor(+t.minutesPlanned)) : 0;
+  return { title, minutesPlanned: mp };
+}
+
+/**
+ * Возвращает массив задач-шаблона для weekday ('mon'..'sun').
+ */
+function getTemplate(weekday) {
+  ensureScheduleTemplates();
+  const day = state.scheduleTemplates[weekday];
+  if (!day) return [];
+  const arr = Array.isArray(day.tasks) ? day.tasks : [];
+  // Возвращаем копию, нормализованную
+  return arr.map(normalizeTemplateTask);
+}
+
+/**
+ * Сохраняет массив задач-шаблона для weekday ('mon'..'sun').
+ * Валидация: только title + minutesPlanned>=0.
+ */
+function setTemplate(weekday, tasks) {
+  ensureScheduleTemplates();
+  const safe = Array.isArray(tasks) ? tasks.map(normalizeTemplateTask) : [];
+  state.scheduleTemplates[weekday] = { tasks: safe };
+  saveState(state);
+}
+
+/**
+ * (Заготовка на 3.4) Применяет шаблон для weekday к конкретной дате (перезаписывает задачи дня).
+ * Сейчас не вызывается из UI — подключим на шаге 3.4.
+ */
+function applyTemplateToDate(weekday, dateKey) {
+  ensureDay(dateKey);
+  const tpl = getTemplate(weekday);
+  // Превратим "шаблонную" запись в "реальные задачи" дня (с id, isDone = false, minutesDone = 0)
+  state.days[dateKey].tasks = tpl.map((t) => ({
+    id: makeId('x'),
+    title: t.title,
+    minutesPlanned: t.minutesPlanned,
+    minutesDone: 0,
+    isDone: false,
+  }));
+  saveState(state);
+}
+
+/* ==============================
    Инициализация
    ============================== */
 
@@ -190,7 +291,8 @@ function initState() {
   const defaults = {
     selectedDate: null,
     days: {},
-    currentView: 'dashboard', // новый флаг экрана (этап 3.1)
+    currentView: 'dashboard',
+    scheduleTemplates: makeEmptyScheduleTemplates(), // новый раздел (этап 3.2)
   };
   state = loadState(defaults);
 
@@ -201,14 +303,17 @@ function initState() {
     console.info('[planner] init: selectedDate ->', tomorrowKey);
   }
 
+  // Гарантируем структуру дней и шаблонов
   ensureDay(state.selectedDate);
+  ensureScheduleTemplates();
+
+  // Оставляем сид для дашборда (как раньше)
   robustSeedIfNeeded(state.selectedDate);
 }
 
 function initNavHandlers() {
   if (btnToday) {
     btnToday.addEventListener('click', () => {
-      // Переходим на дашборд и показываем «сегодня»
       setSelectedDate(toDateKey(getToday()));
       switchView('dashboard');
     });
@@ -230,12 +335,15 @@ function bootstrap() {
   initState();
   initNavHandlers();
 
-  // Показать экран согласно state.currentView
   if (!VIEWS.includes(state.currentView)) state.currentView = 'dashboard';
   showOnly(state.currentView);
-
-  // Если стартуем на дашборде — отрисуем сразу
   if (state.currentView === 'dashboard') renderAll();
 }
 
 bootstrap();
+
+/* ==============================
+   Экспорт (если кому-то понадобится позже)
+   ============================== */
+// Ничего не экспортируем из app.js — это точка входа.
+// Хелперы для шаблонов оставлены внутренними до шага 3.3/3.4.
