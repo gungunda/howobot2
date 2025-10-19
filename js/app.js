@@ -1,8 +1,9 @@
 // js/app.js
 // Этап 3.1: мини-роутер (dashboard / schedule / calendar)
-// Этап 3.2: модель шаблонов расписания в state
-// Этап 3.3: базовый UI редактора расписания
-// Этап 3.4: применение шаблона к выбранной дате
+// Этап 3.2: шаблоны расписания
+// Этап 3.3: UI редактора расписания
+// Этап 3.4: применение шаблона к дате
+// Этап 3.5: календарь — сетка месяца с навигацией
 
 'use strict';
 
@@ -11,7 +12,7 @@
    ============================== */
 
 import { loadState, saveState } from './storage.js';
-import { toDateKey, parseDateKey, getToday, getTomorrow } from './date.js';
+import { toDateKey, parseDateKey, getToday, getTomorrow, addDays } from './date.js';
 import { computeTotals, etaFromNow } from './compute.js';
 import { renderStats, renderTasks } from './ui.js';
 
@@ -22,15 +23,6 @@ import { renderStats, renderTasks } from './ui.js';
 const STATE_STORAGE_KEY = 'planner.state.v1';
 const VIEWS = ['dashboard', 'schedule', 'calendar'];
 const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-const WEEKDAY_LABEL = {
-  mon: 'Понедельник',
-  tue: 'Вторник',
-  wed: 'Среда',
-  thu: 'Четверг',
-  fri: 'Пятница',
-  sat: 'Суббота',
-  sun: 'Воскресенье',
-};
 
 /* ==============================
    DOM-ссылки
@@ -52,8 +44,10 @@ const btnSaveTpl = document.querySelector('[data-schedule-save]');
 const btnApplyTemplate = document.querySelector('[data-apply-template]');
 
 // Calendar UI
-const inputPickDate = document.querySelector('[data-pick-date]');
-const btnApplyPicked = document.querySelector('[data-apply-picked]');
+const calPrevBtn  = document.querySelector('[data-cal-prev]');
+const calNextBtn  = document.querySelector('[data-cal-next]');
+const calLabelEl  = document.querySelector('[data-cal-label]');
+const calGridEl   = document.querySelector('[data-cal-grid]');
 
 /* ==============================
    Состояние
@@ -61,6 +55,10 @@ const btnApplyPicked = document.querySelector('[data-apply-picked]');
 
 let state = null;
 let scheduleCurrentWeekday = 'mon';
+
+// Текущий показ в календаре (год/месяц для сетки)
+let calYear  = null; // число, например 2025
+let calMonth = null; // 0..11
 
 /* ==============================
    День/задачи (дашборд)
@@ -115,7 +113,7 @@ function switchView(viewName) {
   } else if (viewName === 'schedule') {
     renderScheduleEditor();
   } else if (viewName === 'calendar') {
-    renderCalendar();
+    openCalendarForSelectedDate();
   }
 }
 
@@ -205,7 +203,7 @@ function renderAll() {
 }
 
 /* ==============================
-   3.2 — Шаблоны расписания в state
+   3.2 — Шаблоны расписания (state)
    ============================== */
 
 function makeEmptyScheduleTemplates() {
@@ -258,14 +256,6 @@ function setTemplate(weekday, tasks) {
   saveState(state);
 }
 
-/* === вспомогательное: ключ дня недели из Date (sun..sat) -> (mon..sun) === */
-function weekdayKeyFromDate(date) {
-  const d = new Date(date);
-  const js = d.getDay(); // 0..6, где 0 = воскресенье
-  return ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][js];
-}
-
-/* === применение шаблона к дате (ядро) === */
 function applyTemplateToDate(weekday, dateKey) {
   ensureDay(dateKey);
   const tpl = getTemplate(weekday);
@@ -316,9 +306,7 @@ function renderScheduleRows(weekday) {
     btnDel.type = 'button';
     btnDel.className = 'btn';
     btnDel.textContent = 'Удалить';
-    btnDel.addEventListener('click', () => {
-      row.remove();
-    });
+    btnDel.addEventListener('click', () => row.remove());
 
     actions.appendChild(btnDel);
     row.append(inputTitle, inputMinutes, actions);
@@ -330,11 +318,8 @@ function highlightActiveWeekday() {
   if (!weekdaySwitch) return;
   const buttons = weekdaySwitch.querySelectorAll('button[data-weekday]');
   buttons.forEach((b) => {
-    if (b.dataset.weekday === scheduleCurrentWeekday) {
-      b.classList.add('active');
-    } else {
-      b.classList.remove('active');
-    }
+    if (b.dataset.weekday === scheduleCurrentWeekday) b.classList.add('active');
+    else b.classList.remove('active');
   });
 }
 
@@ -414,32 +399,134 @@ function renderScheduleEditor() {
     btnSaveTpl.dataset.bound = '1';
   }
 
-  /* === 3.4 — кнопка применения шаблона к выбранной дате === */
   if (btnApplyTemplate && !btnApplyTemplate.dataset.bound) {
     btnApplyTemplate.addEventListener('click', () => {
       const dateKey = state.selectedDate;
       if (!dateKey) return;
       applyTemplateToDate(scheduleCurrentWeekday, dateKey);
       console.info('[planner] schedule: template applied to', dateKey, 'from', scheduleCurrentWeekday);
-      switchView('dashboard'); // покажем результат
+      switchView('dashboard');
     });
     btnApplyTemplate.dataset.bound = '1';
   }
 }
 
 /* ==============================
-   Calendar (упрощённый)
+   3.5 — Календарь: сетка месяца
    ============================== */
 
+/**
+ * Получаем число дней в месяце.
+ * Пример: daysInMonth(2025, 0) -> 31 (январь).
+ */
+function daysInMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+/**
+ * Возвращает индекс дня недели (1..7) с понедельника,
+ * где 1 = Пн, 7 = Вс.
+ */
+function weekdayMonFirst(date) {
+  const js = date.getDay(); // 0..6, 0 = Вс
+  return js === 0 ? 7 : js; // 1..7
+}
+
+/**
+ * Пересобирает лейбл и сетку календаря на основе calYear/calMonth.
+ */
 function renderCalendar() {
-  if (!inputPickDate || !btnApplyPicked) return;
+  if (!calGridEl || calYear == null || calMonth == null) return;
 
-  const d = parseDateKey(state.selectedDate ?? toDateKey(getToday()));
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
+  // Заголовок месяца
+  const label = new Date(calYear, calMonth, 1).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'long',
+  });
+  if (calLabelEl) calLabelEl.textContent = label;
 
-  inputPickDate.value = `${yyyy}-${mm}-${dd}`;
+  // Выбранная дата и "сегодня" для подсветки
+  const selectedKey = state.selectedDate;
+  const todayKey = toDateKey(getToday());
+
+  // Подсчёт смещения первой недели (Пн..Вс)
+  const firstDay = new Date(calYear, calMonth, 1);
+  const firstWeekday = weekdayMonFirst(firstDay); // 1..7
+  const totalDays = daysInMonth(calYear, calMonth);
+
+  // Сколько ячеек до 1-го числа (с Пн)
+  const leading = firstWeekday - 1; // 0..6
+
+  // Сколько ячеек всего рендерим — делаем 6 недель по 7 (42), чтобы сетка не "прыгала"
+  const totalCells = 42;
+
+  // Начальная дата для сетки — это (1-е число) минус leading дней
+  const startDate = new Date(calYear, calMonth, 1 - leading);
+
+  // Очищаем сетку
+  calGridEl.innerHTML = '';
+
+  for (let i = 0; i < totalCells; i++) {
+    const d = addDays(startDate, i);
+    const cell = document.createElement('div');
+    cell.className = 'calendar-cell';
+
+    const inCurrentMonth = d.getMonth() === calMonth;
+    if (!inCurrentMonth) cell.classList.add('outside');
+
+    const key = toDateKey(d);
+    if (key === todayKey) cell.classList.add('today');
+    if (key === selectedKey) cell.classList.add('selected');
+
+    cell.textContent = String(d.getDate());
+
+    // Клик по ячейке — выбираем дату и переходим на дашборд
+    cell.addEventListener('click', () => {
+      setSelectedDate(key);
+      switchView('dashboard');
+    });
+
+    calGridEl.appendChild(cell);
+  }
+}
+
+/**
+ * Открыть календарь, синхронизировав месяц с выбранной датой.
+ */
+function openCalendarForSelectedDate() {
+  const base = parseDateKey(state.selectedDate ?? toDateKey(getToday()));
+  calYear = base.getFullYear();
+  calMonth = base.getMonth();
+  renderCalendar();
+
+  // Навешиваем prev/next (однократно)
+  if (calPrevBtn && !calPrevBtn.dataset.bound) {
+    calPrevBtn.addEventListener('click', () => {
+      // Переходим на предыдущий месяц
+      if (calMonth === 0) {
+        calMonth = 11;
+        calYear -= 1;
+      } else {
+        calMonth -= 1;
+      }
+      renderCalendar();
+    });
+    calPrevBtn.dataset.bound = '1';
+  }
+
+  if (calNextBtn && !calNextBtn.dataset.bound) {
+    calNextBtn.addEventListener('click', () => {
+      // Переходим на следующий месяц
+      if (calMonth === 11) {
+        calMonth = 0;
+        calYear += 1;
+      } else {
+        calMonth += 1;
+      }
+      renderCalendar();
+    });
+    calNextBtn.dataset.bound = '1';
+  }
 }
 
 /* ==============================
@@ -486,28 +573,15 @@ function initNavHandlers() {
       switchView('dashboard');
     });
   }
-
   if (btnSchedule) {
     btnSchedule.addEventListener('click', () => {
       switchView('schedule');
     });
   }
-
   if (btnCalendar) {
     btnCalendar.addEventListener('click', () => {
       switchView('calendar');
     });
-  }
-
-  if (btnApplyPicked && inputPickDate && !btnApplyPicked.dataset.bound) {
-    btnApplyPicked.addEventListener('click', () => {
-      const v = inputPickDate.value; // 'YYYY-MM-DD'
-      if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
-        setSelectedDate(v);
-        switchView('dashboard');
-      }
-    });
-    btnApplyPicked.dataset.bound = '1';
   }
 }
 
@@ -524,7 +598,7 @@ function bootstrap() {
 
   if (state.currentView === 'dashboard') renderAll();
   if (state.currentView === 'schedule') renderScheduleEditor();
-  if (state.currentView === 'calendar') renderCalendar();
+  if (state.currentView === 'calendar') openCalendarForSelectedDate();
 }
 
 bootstrap();

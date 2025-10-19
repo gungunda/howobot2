@@ -37,6 +37,7 @@
             <div class="stat-label">Осталось</div>
             <div class="stat-value" data-stat="left">0 мин</div>
           </div>
+          <div class="stat">
             <div class="stat-label">Финиш-оценка</div>
             <div class="stat-value" data-stat="eta">—</div>
           </div>
@@ -54,7 +55,6 @@
       <section class="view" data-view="schedule" hidden>
         <h2>Редактор расписания (шаблоны Пн–Вс)</h2>
 
-        <!-- Переключатель дня недели -->
         <div class="weekday-switch">
           <button type="button" data-weekday="mon">Пн</button>
           <button type="button" data-weekday="tue">Вт</button>
@@ -65,7 +65,6 @@
           <button type="button" data-weekday="sun">Вс</button>
         </div>
 
-        <!-- Список задач шаблона для выбранного дня недели -->
         <div class="schedule-editor card">
           <div class="schedule-header">
             <div class="col-title">Задание</div>
@@ -76,15 +75,9 @@
           <div class="schedule-list" data-schedule-list></div>
 
           <div class="schedule-controls">
-            <button type="button" class="btn" data-schedule-add>
-              Добавить строку
-            </button>
-            <button type="button" class="btn" data-apply-template>
-              Применить этот шаблон к выбранной дате
-            </button>
-            <button type="button" class="btn primary" data-schedule-save>
-              Сохранить шаблон
-            </button>
+            <button type="button" class="btn" data-schedule-add>Добавить строку</button>
+            <button type="button" class="btn" data-apply-template>Применить этот шаблон к выбранной дате</button>
+            <button type="button" class="btn primary" data-schedule-save>Сохранить шаблон</button>
           </div>
 
           <p class="muted small">
@@ -95,14 +88,32 @@
 
       <!-- ===== Calendar (выбор даты) ===== -->
       <section class="view" data-view="calendar" hidden>
-        <h2>Календарь выбора даты</h2>
+        <h2>Календарь</h2>
 
-        <div class="calendar-placeholder card">
-          <label class="small">Быстрый вариант:</label>
-          <input type="date" data-pick-date />
-          <button type="button" class="btn" data-apply-picked>
-            Открыть на дашборде
-          </button>
+        <div class="calendar card">
+          <div class="calendar-header">
+            <button type="button" class="btn" data-cal-prev>&larr;</button>
+            <div class="calendar-label" data-cal-label>—</div>
+            <button type="button" class="btn" data-cal-next>&rarr;</button>
+          </div>
+
+          <div class="calendar-weekdays">
+            <div>Пн</div>
+            <div>Вт</div>
+            <div>Ср</div>
+            <div>Чт</div>
+            <div>Пт</div>
+            <div class="muted">Сб</div>
+            <div class="muted">Вс</div>
+          </div>
+
+          <div class="calendar-grid" data-cal-grid>
+            <!-- сюда рендерятся ячейки дней -->
+          </div>
+
+          <div class="calendar-footer muted small">
+            Клик по дню — открыть эту дату на дашборде.
+          </div>
         </div>
       </section>
     </main>
