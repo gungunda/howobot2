@@ -5,6 +5,7 @@
 // Этап 3.4: применение шаблона к дате
 // Этап 3.5: календарь — сетка месяца
 // Этап 3.6: валидации в редакторе расписания
+// Этап 3.7: UX-полировка (toast, confirm overwrite, счётчик строк/минут, активные кнопки)
 
 'use strict';
 
@@ -43,6 +44,8 @@ const scheduleListEl = document.querySelector('[data-schedule-list]');
 const btnAddRow = document.querySelector('[data-schedule-add]');
 const btnSaveTpl = document.querySelector('[data-schedule-save]');
 const btnApplyTemplate = document.querySelector('[data-apply-template]');
+const elSchedCount = document.querySelector('[data-sched-count]');
+const elSchedTotal = document.querySelector('[data-sched-total]');
 
 // Calendar UI
 const calPrevBtn  = document.querySelector('[data-cal-prev]');
@@ -50,16 +53,45 @@ const calNextBtn  = document.querySelector('[data-cal-next]');
 const calLabelEl  = document.querySelector('[data-cal-label]');
 const calGridEl   = document.querySelector('[data-cal-grid]');
 
+// Toast
+const toastEl = document.querySelector('[data-toast]');
+
 /* ==============================
    Состояние
    ============================== */
 
 let state = null;
-let scheduleCurrentWeekday = 'mon';   // объявлено ОДИН раз
+let scheduleCurrentWeekday = 'mon';
 
-// Текущий показ в календаре (год/месяц для сетки)
-let calYear  = null; // число, например 2025
-let calMonth = null; // 0..11
+let calYear  = null;
+let calMonth = null;
+
+/* ==============================
+   Утилиты UX
+   ============================== */
+
+function showToast(message = '', ms = 1800) {
+  if (!toastEl) return;
+  toastEl.textContent = message;
+  toastEl.style.display = 'block';
+  window.clearTimeout(showToast._t);
+  showToast._t = window.setTimeout(() => {
+    toastEl.style.display = 'none';
+  }, ms);
+}
+
+function setActiveNav(viewName) {
+  const map = {
+    dashboard: btnToday,
+    schedule: btnSchedule,
+    calendar: btnCalendar,
+  };
+  for (const el of [btnToday, btnSchedule, btnCalendar]) {
+    if (!el) continue;
+    if (el === map[viewName]) el.classList.add('primary');
+    else el.classList.remove('primary');
+  }
+}
 
 /* ==============================
    День/задачи (дашборд)
@@ -107,6 +139,7 @@ function switchView(viewName) {
   }
   state.currentView = viewName;
   saveState(state);
+  setActiveNav(viewName);
   showOnly(viewName);
 
   if (viewName === 'dashboard') {
@@ -271,10 +304,9 @@ function applyTemplateToDate(weekday, dateKey) {
 }
 
 /* ==============================
-   3.3 — UI редактора расписания
+   3.3–3.7 — UI редактора расписания
    ============================== */
 
-/** Создаём (или находим) баннер ошибок внизу редактора. */
 function ensureErrorBanner() {
   if (!viewSchedule) return null;
   let banner = viewSchedule.querySelector('[data-schedule-errors]');
@@ -288,7 +320,6 @@ function ensureErrorBanner() {
   return banner;
 }
 
-/** Показать/скрыть сообщение об ошибках. */
 function showErrors(messages = []) {
   const banner = ensureErrorBanner();
   if (!banner) return;
@@ -301,18 +332,15 @@ function showErrors(messages = []) {
   banner.textContent = messages.join(' · ');
 }
 
-/** Добавляет/снимает красную подсветку ошибки для input. */
 function markInvalid(input, invalid) {
   if (!input) return;
   if (invalid) input.classList.add('invalid');
   else input.classList.remove('invalid');
 }
 
-/** Нормализация ввода минут «на лету»: только целые ≥ 0. */
 function bindMinutesSanitizer(inputNumber) {
   if (!inputNumber || inputNumber.dataset.sanitizerBound) return;
   inputNumber.addEventListener('input', () => {
-    // оставим только цифры
     const digits = String(inputNumber.value).replace(/[^\d]/g, '');
     inputNumber.value = digits;
   });
@@ -320,7 +348,6 @@ function bindMinutesSanitizer(inputNumber) {
     const n = Math.max(0, Math.floor(Number(inputNumber.value || 0)));
     inputNumber.value = String(n);
   });
-  // Небольшой UX: Enter в поле минут добавляет новую строку
   inputNumber.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && btnAddRow) {
       e.preventDefault();
@@ -330,10 +357,6 @@ function bindMinutesSanitizer(inputNumber) {
   inputNumber.dataset.sanitizerBound = '1';
 }
 
-/**
- * Рендерит строки редактирования для выбранного дня недели.
- * Каждая строка: input title, input minutes, кнопка удалить.
- */
 function renderScheduleRows(weekday) {
   if (!scheduleListEl) return;
   scheduleListEl.innerHTML = '';
@@ -360,7 +383,6 @@ function renderScheduleRows(weekday) {
     inputMinutes.placeholder = '0';
     inputMinutes.value = String(tpl[i].minutesPlanned);
 
-    // биндим «санитайзер» чисел
     bindMinutesSanitizer(inputMinutes);
 
     const actions = document.createElement('div');
@@ -370,36 +392,35 @@ function renderScheduleRows(weekday) {
     btnDel.type = 'button';
     btnDel.className = 'btn';
     btnDel.textContent = 'Удалить';
-    btnDel.addEventListener('click', () => row.remove());
+    btnDel.addEventListener('click', () => {
+      row.remove();
+      updateScheduleSummary();
+    });
 
     actions.appendChild(btnDel);
     row.append(inputTitle, inputMinutes, actions);
     scheduleListEl.appendChild(row);
   }
 
-  // при переходе на другой день — очистим возможные старые ошибки
   showErrors([]);
+  updateScheduleSummary();
 }
 
-/** Вспомогательная: проверка одной строки, возврат нормализованных данных или ошибок. */
 function validateRow(row) {
   const [inputTitle, inputMinutes] = row.querySelectorAll('input');
   const title = String(inputTitle?.value ?? '').trim();
   const minutes = Math.max(0, Math.floor(Number(inputMinutes?.value ?? 0)));
   const errs = [];
 
-  // Правила
   if (!title) errs.push('пустое название');
   if (!Number.isFinite(minutes) || minutes < 0) errs.push('минуты некорректны');
 
-  // Подсветка
   markInvalid(inputTitle, !title);
   markInvalid(inputMinutes, !Number.isFinite(minutes) || minutes < 0);
 
   return { ok: errs.length === 0, title, minutes, errors: errs };
 }
 
-/** Собираем и валидируем все строки. Возвращаем {validTasks, messages}. */
 function collectAndValidateTemplate() {
   const rows = Array.from(scheduleListEl?.querySelectorAll('.schedule-row') || []);
   const validTasks = [];
@@ -419,7 +440,6 @@ function collectAndValidateTemplate() {
     }
   });
 
-  // Если все строки пустые — добавим понятное сообщение
   if (validTasks.length === 0) {
     messages.push('все строки пустые — укажите название или минуты');
   }
@@ -427,7 +447,24 @@ function collectAndValidateTemplate() {
   return { validTasks, messages };
 }
 
-/** Подсветка активной кнопки дня недели. */
+/* — счётчик строк и сумма минут (UX 3.7) — */
+function updateScheduleSummary() {
+  const rows = Array.from(scheduleListEl?.querySelectorAll('.schedule-row') || []);
+  let count = 0;
+  let total = 0;
+  for (const r of rows) {
+    const [inputTitle, inputMinutes] = r.querySelectorAll('input');
+    const title = String(inputTitle?.value ?? '').trim();
+    const minutes = Math.max(0, Math.floor(Number(inputMinutes?.value ?? 0)));
+    if (title || minutes > 0) {
+      count += 1;
+      total += minutes;
+    }
+  }
+  if (elSchedCount) elSchedCount.textContent = `${count} строк`;
+  if (elSchedTotal) elSchedTotal.textContent = `${total} мин`;
+}
+
 function highlightActiveWeekday() {
   if (!weekdaySwitch) return;
   const buttons = weekdaySwitch.querySelectorAll('button[data-weekday]');
@@ -437,7 +474,6 @@ function highlightActiveWeekday() {
   });
 }
 
-/** Рендерит редактор: подсветка дня + строки + бинды на кнопки. */
 function renderScheduleEditor() {
   if (!viewSchedule) return;
 
@@ -481,14 +517,18 @@ function renderScheduleEditor() {
       btnDel.type = 'button';
       btnDel.className = 'btn';
       btnDel.textContent = 'Удалить';
-      btnDel.addEventListener('click', () => row.remove());
+      btnDel.addEventListener('click', () => {
+        row.remove();
+        updateScheduleSummary();
+      });
 
       actions.appendChild(btnDel);
       row.append(inputTitle, inputMinutes, actions);
       scheduleListEl.appendChild(row);
 
       inputTitle.focus();
-      showErrors([]); // прячем старые ошибки
+      showErrors([]);
+      updateScheduleSummary();
     });
     btnAddRow.dataset.bound = '1';
   }
@@ -498,12 +538,14 @@ function renderScheduleEditor() {
       const { validTasks, messages } = collectAndValidateTemplate();
       if (messages.length) {
         showErrors(messages);
+        showToast('Проверь поля — есть ошибки');
       } else {
         showErrors([]);
       }
 
       if (validTasks.length > 0) {
         setTemplate(scheduleCurrentWeekday, validTasks);
+        showToast('Шаблон сохранён');
         console.info('[planner] schedule: template saved for', scheduleCurrentWeekday, validTasks);
       } else {
         console.warn('[planner] schedule: nothing to save (invalid/empty)');
@@ -514,28 +556,46 @@ function renderScheduleEditor() {
 
   if (btnApplyTemplate && !btnApplyTemplate.dataset.bound) {
     btnApplyTemplate.addEventListener('click', () => {
-      // Перед применением — тоже валидация (сохранять не обязательно, но пустоту не применяем)
       const { validTasks, messages } = collectAndValidateTemplate();
       if (messages.length) {
         showErrors(messages);
-      } else {
-        showErrors([]);
+        showToast('Не могу применить — есть ошибки');
+        return;
       }
       if (validTasks.length === 0) {
-        console.warn('[planner] schedule: template apply aborted — empty/invalid');
+        showToast('Шаблон пустой');
         return;
       }
 
-      // Если валидно — можно и сохранить шаблон заодно, чтобы не потерялось
-      setTemplate(scheduleCurrentWeekday, validTasks);
-
+      // Подтверждение, если в выбранной дате уже есть задачи
       const dateKey = state.selectedDate;
-      if (!dateKey) return;
+      const existing = getTasksForDate(dateKey);
+      const hasData = Array.isArray(existing) && existing.length > 0;
+      let ok = true;
+      if (hasData) {
+        ok = window.confirm('Переписать задачи выбранной даты по шаблону? Текущее содержимое будет заменено.');
+      }
+      if (!ok) return;
+
+      // Сохраним шаблон и применим
+      setTemplate(scheduleCurrentWeekday, validTasks);
       applyTemplateToDate(scheduleCurrentWeekday, dateKey);
+
+      showToast('Шаблон применён к выбранной дате');
       console.info('[planner] schedule: template applied to', dateKey, 'from', scheduleCurrentWeekday);
       switchView('dashboard');
     });
     btnApplyTemplate.dataset.bound = '1';
+  }
+
+  // live-пересчёт summary при вводе
+  if (!scheduleListEl.dataset.summaryBound) {
+    scheduleListEl.addEventListener('input', (e) => {
+      if (e.target && e.target.tagName === 'INPUT') {
+        updateScheduleSummary();
+      }
+    });
+    scheduleListEl.dataset.summaryBound = '1';
   }
 }
 
@@ -548,8 +608,8 @@ function daysInMonth(year, month) {
 }
 
 function weekdayMonFirst(date) {
-  const js = date.getDay(); // 0..6, 0 = Вс
-  return js === 0 ? 7 : js; // 1..7, где 1 = Пн
+  const js = date.getDay();
+  return js === 0 ? 7 : js;
 }
 
 function renderCalendar() {
@@ -565,8 +625,8 @@ function renderCalendar() {
   const todayKey = toDateKey(getToday());
 
   const firstDay = new Date(calYear, calMonth, 1);
-  const firstWeekday = weekdayMonFirst(firstDay); // 1..7
-  const leading = firstWeekday - 1; // 0..6
+  const firstWeekday = weekdayMonFirst(firstDay);
+  const leading = firstWeekday - 1;
   const totalCells = 42;
 
   const startDate = new Date(calYear, calMonth, 1 - leading);
@@ -603,7 +663,12 @@ function openCalendarForSelectedDate() {
 
   if (calPrevBtn && !calPrevBtn.dataset.bound) {
     calPrevBtn.addEventListener('click', () => {
-      if (calMonth === 0) { calMonth = 11; calYear -= 1; } else { calMonth -= 1; }
+      if (calMonth === 0) {
+        calMonth = 11;
+        calYear -= 1;
+      } else {
+        calMonth -= 1;
+      }
       renderCalendar();
     });
     calPrevBtn.dataset.bound = '1';
@@ -611,7 +676,12 @@ function openCalendarForSelectedDate() {
 
   if (calNextBtn && !calNextBtn.dataset.bound) {
     calNextBtn.addEventListener('click', () => {
-      if (calMonth === 11) { calMonth = 0; calYear += 1; } else { calMonth += 1; }
+      if (calMonth === 11) {
+        calMonth = 0;
+        calYear += 1;
+      } else {
+        calMonth += 1;
+      }
       renderCalendar();
     });
     calNextBtn.dataset.bound = '1';
@@ -683,6 +753,7 @@ function bootstrap() {
     state.currentView = 'dashboard';
   }
 
+  setActiveNav(state.currentView);
   showOnly(state.currentView);
 
   if (state.currentView === 'dashboard') renderAll();
