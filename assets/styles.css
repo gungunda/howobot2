@@ -106,3 +106,19 @@ body {
 .task-checkbox { width: 18px; height: 18px; }
 .task-title { overflow-wrap: anywhere; }
 .task-minutes { color: var(--muted); }
+
+/* --- Views (экраны) --- */
+.view[hidden] { display: none; }
+
+.app-nav {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.muted { opacity: 0.7; }
+.card {
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: #fafafa;
+}

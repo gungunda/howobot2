@@ -1,56 +1,84 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Лёшин планировщик</title>
-  <link rel="stylesheet" href="assets/styles.css" />
-</head>
-<body>
-  <main class="dashboard">
-    <header class="dashboard__header">
-      <h1 class="dashboard__title">Домашка на завтра</h1>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Лёшин планировщик</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 class="app-title">Лёшин планировщик</h1>
 
-      <nav class="dashboard__nav" aria-label="Навигация">
-        <button class="btn" data-action="today">Сегодня</button>
-        <button class="btn" data-action="schedule">Расписание</button>
-        <button class="btn" data-action="calendar">Календарь</button>
+      <nav class="app-nav">
+        <button type="button" data-action="today">Сегодня</button>
+        <button type="button" data-action="schedule">Расписание</button>
+        <button type="button" data-action="calendar">Календарь</button>
       </nav>
     </header>
 
-    <!-- Сводные показатели, которые обновляет ui.renderStats -->
-    <section class="stats" role="region" aria-label="Показатели">
-      <div class="stat">
-        <span>Общая нагрузка</span>
-        <strong data-stat="planned">0 мин</strong>
-      </div>
-      <div class="stat">
-        <span>Выполнено</span>
-        <strong data-stat="done">0 мин (0%)</strong>
-      </div>
-      <div class="stat">
-        <span>Осталось</span>
-        <strong data-stat="left">0 мин</strong>
-      </div>
-      <div class="stat">
-        <span>Финиш-оценка</span>
-        <strong data-stat="eta">—</strong>
-      </div>
-    </section>
+    <main class="app-main">
+      <!-- ===== Dashboard (дашборд дня) ===== -->
+      <section class="view" data-view="dashboard">
+        <!-- Подпись выбранного дня -->
+        <section class="day-header">
+          <h2 class="day-title" data-day-label>—</h2>
+        </section>
 
-    <!-- Подпись выбранного дня -->
-    <section class="day-label">
-      <h2 class="day-label__title"><span data-day-label>—</span></h2>
-    </section>
+        <!-- Сводные показатели -->
+        <section class="stats">
+          <div class="stat">
+            <div class="stat-label">Общая нагрузка</div>
+            <div class="stat-value" data-stat="planned">0 мин</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Выполнено</div>
+            <div class="stat-value" data-stat="done">0 мин (0%)</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Осталось</div>
+            <div class="stat-value" data-stat="left">0 мин</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Финиш-оценка</div>
+            <div class="stat-value" data-stat="eta">—</div>
+          </div>
+        </section>
 
-    <!-- Список задач, который обновляет ui.renderTasks -->
-    <section class="tasks" aria-label="Задачи">
-      <div data-empty class="empty">Нет заданий на этот день.</div>
-      <div data-tasks class="task-list"></div>
-    </section>
-  </main>
+        <!-- Список задач -->
+        <section class="tasks">
+          <div class="tasks-empty" data-empty style="display:none;">
+            Нет заданий на этот день.
+          </div>
+          <div class="tasks-list" data-tasks></div>
+        </section>
+      </section>
 
-  <!-- Один модульный вход — app.js импортирует остальные (ES-modules) -->
-  <script type="module" src="js/app.js"></script>
-</body>
+      <!-- ===== Schedule (редактор шаблонов) ===== -->
+      <section class="view" data-view="schedule" hidden>
+        <h2>Редактор расписания (шаблоны по дням недели)</h2>
+        <p class="muted">
+          Здесь позже появится список дней недели (Пн–Вс) и задачи-шаблоны.
+          Пока это заглушка для шага 3.1.
+        </p>
+        <div class="schedule-placeholder card">
+          <p>Выбери день недели, редактируй список задач, сохрани шаблон.</p>
+        </div>
+      </section>
+
+      <!-- ===== Calendar (выбор даты) ===== -->
+      <section class="view" data-view="calendar" hidden>
+        <h2>Календарь выбора даты</h2>
+        <p class="muted">
+          Здесь позже появится календарная сетка или простой &lt;input type="date"&gt;.
+          Пока это заглушка для шага 3.1.
+        </p>
+        <div class="calendar-placeholder card">
+          <p>Выбери дату — и мы откроем её на Дашборде.</p>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
 </html>
