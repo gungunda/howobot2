@@ -1,7 +1,8 @@
 // js/app.js
 // Точка входа «Лёшин планировщик».
-// Этап 3.1: мини-роутер (dashboard / schedule / calendar)
-// Этап 3.2: модель шаблонов расписания в state + хелперы (без UI логики)
+// Этап 3.1: мини-роутер (dashboard/schedule/calendar)
+// Этап 3.2: модель шаблонов расписания в state
+// Этап 3.3: базовый UI редактора расписания (выбор дня, список строк, add/remove/save)
 
 'use strict';
 
@@ -20,6 +21,11 @@ import { renderStats, renderTasks } from './ui.js';
 
 const STATE_STORAGE_KEY = 'planner.state.v1';
 const VIEWS = ['dashboard', 'schedule', 'calendar'];
+const WEEKDAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+const WEEKDAY_LABEL = {
+  mon: 'Понедельник', tue: 'Вторник', wed: 'Среда',
+  thu: 'Четверг', fri: 'Пятница', sat: 'Суббота', sun: 'Воскресенье'
+};
 
 /* ==============================
    Ссылки на DOM
@@ -33,11 +39,22 @@ const viewDashboard = document.querySelector('[data-view="dashboard"]');
 const viewSchedule  = document.querySelector('[data-view="schedule"]');
 const viewCalendar  = document.querySelector('[data-view="calendar"]');
 
+// Schedule DOM
+const weekdaySwitch = document.querySelector('.weekday-switch');
+const scheduleListEl = document.querySelector('[data-schedule-list]');
+const btnAddRow = document.querySelector('[data-schedule-add]');
+const btnSaveTpl = document.querySelector('[data-schedule-save]');
+
+// Calendar (упрощённый)
+const inputPickDate = document.querySelector('[data-pick-date]');
+const btnApplyPicked = document.querySelector('[data-apply-picked]');
+
 /* ==============================
    Состояние приложения
    ============================== */
 
 let state = null;
+let scheduleCurrentWeekday = 'mon'; // какой день редактируем сейчас (по умолчанию Пн)
 
 /* ==============================
    Утилиты состояния дней (дашборд)
@@ -65,7 +82,7 @@ function setSelectedDate(dateKey) {
 }
 
 /* ==============================
-   Роутинг экранов (этап 3.1)
+   Роутинг экранов
    ============================== */
 
 function showOnly(viewName) {
@@ -86,7 +103,14 @@ function switchView(viewName) {
   state.currentView = viewName;
   saveState(state);
   showOnly(viewName);
-  if (viewName === 'dashboard') renderAll();
+
+  if (viewName === 'dashboard') {
+    renderAll();
+  } else if (viewName === 'schedule') {
+    renderScheduleEditor(); // новый экран
+  } else if (viewName === 'calendar') {
+    renderCalendar(); // упрощённый
+  }
 }
 
 /* ==============================
@@ -171,39 +195,17 @@ function renderAll() {
 }
 
 /* ==============================
-   Этап 3.2 — Модель шаблонов расписания
+   3.2 — Шаблоны расписания в state
    ============================== */
 
-/**
- * Создаёт пустые шаблоны для 7 дней недели.
- * Формат:
- * scheduleTemplates = {
- *   mon: { tasks: [ {title, minutesPlanned} ] },
- *   tue: { tasks: [...] },
- *   ... wed, thu, fri, sat, sun
- * }
- */
 function makeEmptyScheduleTemplates() {
-  return {
-    mon: { tasks: [] },
-    tue: { tasks: [] },
-    wed: { tasks: [] },
-    thu: { tasks: [] },
-    fri: { tasks: [] },
-    sat: { tasks: [] },
-    sun: { tasks: [] },
-  };
+  return { mon:{tasks:[]}, tue:{tasks:[]}, wed:{tasks:[]}, thu:{tasks:[]}, fri:{tasks:[]}, sat:{tasks:[]}, sun:{tasks:[]} };
 }
-
-/**
- * Гарантирует, что scheduleTemplates существует и имеет все 7 ключей.
- */
 function ensureScheduleTemplates() {
   if (!state.scheduleTemplates || typeof state.scheduleTemplates !== 'object') {
     state.scheduleTemplates = makeEmptyScheduleTemplates();
     return;
   }
-  // Добьём отсутствующие ключи, если какие-то пропали
   const defaults = makeEmptyScheduleTemplates();
   for (const k of Object.keys(defaults)) {
     if (!state.scheduleTemplates[k] || !Array.isArray(state.scheduleTemplates[k].tasks)) {
@@ -211,44 +213,18 @@ function ensureScheduleTemplates() {
     }
   }
 }
-
-/**
- * Возвращает ключ дня недели ('mon'..'sun') для переданной даты.
- * Для junior: getDay() в JS -> 0..6, где 0 = Воскресенье.
- */
-function weekdayKeyFromDate(date) {
-  const d = new Date(date);
-  const js = d.getDay(); // 0..6 (0 = Sunday)
-  // Перекодируем в mon..sun
-  return ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][js];
-}
-
-/**
- * Нормализует одну задачу шаблона (только title + minutesPlanned >= 0).
- */
 function normalizeTemplateTask(t) {
   if (!t || typeof t !== 'object') return { title: 'Задание', minutesPlanned: 0 };
   const title = String(t.title ?? '').trim() || 'Задание';
   const mp = Number.isFinite(+t.minutesPlanned) ? Math.max(0, Math.floor(+t.minutesPlanned)) : 0;
   return { title, minutesPlanned: mp };
 }
-
-/**
- * Возвращает массив задач-шаблона для weekday ('mon'..'sun').
- */
 function getTemplate(weekday) {
   ensureScheduleTemplates();
   const day = state.scheduleTemplates[weekday];
-  if (!day) return [];
-  const arr = Array.isArray(day.tasks) ? day.tasks : [];
-  // Возвращаем копию, нормализованную
+  const arr = Array.isArray(day?.tasks) ? day.tasks : [];
   return arr.map(normalizeTemplateTask);
 }
-
-/**
- * Сохраняет массив задач-шаблона для weekday ('mon'..'sun').
- * Валидация: только title + minutesPlanned>=0.
- */
 function setTemplate(weekday, tasks) {
   ensureScheduleTemplates();
   const safe = Array.isArray(tasks) ? tasks.map(normalizeTemplateTask) : [];
@@ -256,22 +232,175 @@ function setTemplate(weekday, tasks) {
   saveState(state);
 }
 
+/* ==============================
+   3.3 — UI редактора расписания
+   ============================== */
+
 /**
- * (Заготовка на 3.4) Применяет шаблон для weekday к конкретной дате (перезаписывает задачи дня).
- * Сейчас не вызывается из UI — подключим на шаге 3.4.
+ * Рендерит строки редактирования для выбранного дня недели.
+ * Каждая строка: input title, input minutes, кнопка удалить.
  */
-function applyTemplateToDate(weekday, dateKey) {
-  ensureDay(dateKey);
+function renderScheduleRows(weekday) {
+  if (!scheduleListEl) return;
+  scheduleListEl.innerHTML = '';
+
   const tpl = getTemplate(weekday);
-  // Превратим "шаблонную" запись в "реальные задачи" дня (с id, isDone = false, minutesDone = 0)
-  state.days[dateKey].tasks = tpl.map((t) => ({
-    id: makeId('x'),
-    title: t.title,
-    minutesPlanned: t.minutesPlanned,
-    minutesDone: 0,
-    isDone: false,
-  }));
-  saveState(state);
+
+  if (tpl.length === 0) {
+    // по умолчанию одна пустая строка для удобства
+    tpl.push({ title: '', minutesPlanned: 0 });
+  }
+
+  for (let i = 0; i < tpl.length; i++) {
+    const row = document.createElement('div');
+    row.className = 'schedule-row';
+    row.dataset.index = String(i);
+
+    const inputTitle = document.createElement('input');
+    inputTitle.type = 'text';
+    inputTitle.placeholder = 'Название задания';
+    inputTitle.value = tpl[i].title;
+
+    const inputMinutes = document.createElement('input');
+    inputMinutes.type = 'number';
+    inputMinutes.min = '0';
+    inputMinutes.step = '1';
+    inputMinutes.placeholder = '0';
+    inputMinutes.value = String(tpl[i].minutesPlanned);
+
+    const actions = document.createElement('div');
+    actions.className = 'row-actions';
+
+    const btnDel = document.createElement('button');
+    btnDel.type = 'button';
+    btnDel.className = 'btn';
+    btnDel.textContent = 'Удалить';
+
+    btnDel.addEventListener('click', () => {
+      row.remove();
+    });
+
+    actions.appendChild(btnDel);
+    row.append(inputTitle, inputMinutes, actions);
+    scheduleListEl.appendChild(row);
+  }
+}
+
+/**
+ * Подсветка активной кнопки дня недели.
+ */
+function highlightActiveWeekday() {
+  if (!weekdaySwitch) return;
+  const buttons = weekdaySwitch.querySelectorAll('button[data-weekday]');
+  buttons.forEach((b) => {
+    if (b.dataset.weekday === scheduleCurrentWeekday) b.classList.add('active');
+    else b.classList.remove('active');
+  });
+}
+
+/**
+ * Сбор данных из DOM-строк в массив задач шаблона.
+ */
+function collectTemplateFromDOM() {
+  if (!scheduleListEl) return [];
+  const rows = Array.from(scheduleListEl.querySelectorAll('.schedule-row'));
+  const out = [];
+  for (const r of rows) {
+    const [inputTitle, inputMinutes] = r.querySelectorAll('input');
+    const title = String(inputTitle?.value ?? '').trim();
+    const minutes = Math.max(0, Math.floor(Number(inputMinutes?.value ?? 0)));
+    // Сохраняем строки, где хотя бы что-то введено
+    if (title || minutes > 0) {
+      out.push({ title, minutesPlanned: minutes });
+    }
+  }
+  return out;
+}
+
+/**
+ * Рендерит редактор: подсветка дня + строки + бинды на кнопки.
+ */
+function renderScheduleEditor() {
+  if (!viewSchedule) return;
+
+  // Если вдруг пусто, гарантируем структуру
+  ensureScheduleTemplates();
+
+  // Подсветим текущий день
+  highlightActiveWeekday();
+
+  // Отрисуем строки этого дня
+  renderScheduleRows(scheduleCurrentWeekday);
+
+  // Навешиваем обработчики (однократно — но проверим на наличие)
+  if (weekdaySwitch && !weekdaySwitch.dataset.bound) {
+    weekdaySwitch.addEventListener('click', (ev) => {
+      const target = ev.target;
+      if (target && target.matches('button[data-weekday]')) {
+        scheduleCurrentWeekday = target.dataset.weekday;
+        highlightActiveWeekday();
+        renderScheduleRows(scheduleCurrentWeekday);
+      }
+    });
+    weekdaySwitch.dataset.bound = '1';
+  }
+
+  if (btnAddRow && !btnAddRow.dataset.bound) {
+    btnAddRow.addEventListener('click', () => {
+      // Добавим пустую строку
+      const row = document.createElement('div');
+      row.className = 'schedule-row';
+
+      const inputTitle = document.createElement('input');
+      inputTitle.type = 'text';
+      inputTitle.placeholder = 'Название задания';
+
+      const inputMinutes = document.createElement('input');
+      inputMinutes.type = 'number';
+      inputMinutes.min = '0';
+      inputMinutes.step = '1';
+      inputMinutes.placeholder = '0';
+
+      const actions = document.createElement('div');
+      actions.className = 'row-actions';
+
+      const btnDel = document.createElement('button');
+      btnDel.type = 'button';
+      btnDel.className = 'btn';
+      btnDel.textContent = 'Удалить';
+      btnDel.addEventListener('click', () => row.remove());
+
+      actions.appendChild(btnDel);
+      row.append(inputTitle, inputMinutes, actions);
+      scheduleListEl.appendChild(row);
+
+      inputTitle.focus();
+    });
+    btnAddRow.dataset.bound = '1';
+  }
+
+  if (btnSaveTpl && !btnSaveTpl.dataset.bound) {
+    btnSaveTpl.addEventListener('click', () => {
+      const tasks = collectTemplateFromDOM();
+      setTemplate(scheduleCurrentWeekday, tasks);
+      console.info('[planner] schedule: template saved for', scheduleCurrentWeekday, tasks);
+    });
+    btnSaveTpl.dataset.bound = '1';
+  }
+}
+
+/* ==============================
+   Calendar (упрощённый)
+   ============================== */
+
+function renderCalendar() {
+  if (!inputPickDate || !btnApplyPicked) return;
+  // Заполним значение сегодняшним числом для удобства
+  const d = parseDateKey(state.selectedDate ?? toDateKey(getToday()));
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  inputPickDate.value = `${yyyy}-${mm}-${dd}`;
 }
 
 /* ==============================
@@ -292,7 +421,7 @@ function initState() {
     selectedDate: null,
     days: {},
     currentView: 'dashboard',
-    scheduleTemplates: makeEmptyScheduleTemplates(), // новый раздел (этап 3.2)
+    scheduleTemplates: makeEmptyScheduleTemplates(),
   };
   state = loadState(defaults);
 
@@ -303,11 +432,8 @@ function initState() {
     console.info('[planner] init: selectedDate ->', tomorrowKey);
   }
 
-  // Гарантируем структуру дней и шаблонов
   ensureDay(state.selectedDate);
   ensureScheduleTemplates();
-
-  // Оставляем сид для дашборда (как раньше)
   robustSeedIfNeeded(state.selectedDate);
 }
 
@@ -328,6 +454,17 @@ function initNavHandlers() {
       switchView('calendar');
     });
   }
+
+  if (btnApplyPicked && inputPickDate && !btnApplyPicked.dataset.bound) {
+    btnApplyPicked.addEventListener('click', () => {
+      const v = inputPickDate.value; // 'YYYY-MM-DD'
+      if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        setSelectedDate(v);
+        switchView('dashboard');
+      }
+    });
+    btnApplyPicked.dataset.bound = '1';
+  }
 }
 
 function bootstrap() {
@@ -337,13 +474,10 @@ function bootstrap() {
 
   if (!VIEWS.includes(state.currentView)) state.currentView = 'dashboard';
   showOnly(state.currentView);
+
   if (state.currentView === 'dashboard') renderAll();
+  if (state.currentView === 'schedule') renderScheduleEditor();
+  if (state.currentView === 'calendar') renderCalendar();
 }
 
 bootstrap();
-
-/* ==============================
-   Экспорт (если кому-то понадобится позже)
-   ============================== */
-// Ничего не экспортируем из app.js — это точка входа.
-// Хелперы для шаблонов оставлены внутренними до шага 3.3/3.4.
