@@ -1,0 +1,36 @@
+:root {
+  --bg: #f7f8fa;
+  --fg: #222;
+  --brand: #2a7ae2;
+  --radius: 12px;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background-color: var(--bg);
+  color: var(--fg);
+}
+
+.dashboard {
+  display: block;
+  box-sizing: border-box;
+  padding: 1rem;
+  margin: 0 auto;
+  max-width: 960px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  margin-right: 0.5rem;
+  background: white;
+  color: var(--brand);
+  border: 1px solid var(--brand);
+  border-radius: 8px;
+  transition: background 120ms ease;
+}
+
+.btn:hover {
+  background: #eef5ff;
+}

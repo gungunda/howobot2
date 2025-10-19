@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Тест LocalStorage</title>
+</head>
+<body>
+  <h1>Пример хранения данных в localStorage</h1>
+
+  <button id="save">💾 Сохранить расписание</button>
+  <button id="load">📂 Загрузить расписание</button>
+  <button id="clear">🧹 Очистить</button>
+
+  <pre id="output"></pre>
+
+<script>
+// ===============================
+// Пример расписания (данные)
+const exampleWeek = {
+  1: [ { id: "math", title: "Математика", minutes: 90 } ],
+  2: [ { id: "eng2", title: "Английский English", minutes: 100 },{ id: "eng", title: "Английский язык", minutes: 60 } ],
+  3: [ { id: "bio", title: "Биология", minutes: 45 } ]
+};
+
+// Ключ в localStorage (строка)
+const STORAGE_KEY = "planner.weekTemplate";
+
+// ===============================
+// Сохранение
+document.getElementById("save").onclick = () => {
+  const json = JSON.stringify(exampleWeek);
+  localStorage.setItem(STORAGE_KEY, json);
+  show("✅ Сохранено в localStorage:\n" + json);
+};
+
+// Загрузка
+document.getElementById("load").onclick = () => {
+  const data = localStorage.getItem(STORAGE_KEY);
+  if (!data) return show("⚠️ Данных нет. Сначала нажми 'Сохранить'.");
+  const parsed = JSON.parse(data);
+  show("📂 Загружено из localStorage:\n" + JSON.stringify(parsed, null, 2));
+};
+
+// Очистка
+document.getElementById("clear").onclick = () => {
+  localStorage.removeItem(STORAGE_KEY);
+  show("🧹 Данные очищены.");
+};
+
+// Вывод в <pre>
+function show(text) {
+  document.getElementById("output").textContent = text;
+}
+</script>
+</body>
+</html>

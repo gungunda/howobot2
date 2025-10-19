@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Лёшин планировщик</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <section class="dashboard">
+    <header class="dashboard__header">
+      <h2 class="dashboard__title">Домашка на завтра</h2>
+      <nav class="dashboard__nav" aria-label="Навигация">
+        <button id="btn-today" class="btn">Сегодня</button>
+        <button id="btn-schedule" class="btn">Расписание</button>
+        <button id="btn-calendar" class="btn">Календарь</button>
+      </nav>
+    </header>
+
+    <div class="stats" role="region" aria-label="Показатели">
+      <div class="stat"><span>Общая нагрузка</span><strong id="stat-total">—</strong></div>
+      <div class="stat"><span>Выполнено</span><strong id="stat-done">—</strong></div>
+      <div class="stat"><span>Осталось</span><strong id="stat-left">—</strong></div>
+      <div class="stat"><span>Финиш-оценка</span><strong id="stat-eta">—</strong></div>
+    </div>
+  </section>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
