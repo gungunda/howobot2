@@ -10,37 +10,47 @@
   <main class="dashboard">
     <header class="dashboard__header">
       <h1 class="dashboard__title">Домашка на завтра</h1>
+
       <nav class="dashboard__nav" aria-label="Навигация">
-        <button id="btn-today" class="btn">Сегодня</button>
-        <button id="btn-schedule" class="btn">Расписание</button>
-        <button id="btn-calendar" class="btn">Календарь</button>
+        <button class="btn" data-action="today">Сегодня</button>
+        <button class="btn" data-action="schedule">Расписание</button>
+        <button class="btn" data-action="calendar">Календарь</button>
       </nav>
     </header>
 
+    <!-- Сводные показатели, которые обновляет ui.renderStats -->
     <section class="stats" role="region" aria-label="Показатели">
       <div class="stat">
         <span>Общая нагрузка</span>
-        <strong id="stat-total">0</strong>
+        <strong data-stat="planned">0 мин</strong>
       </div>
       <div class="stat">
         <span>Выполнено</span>
-        <strong id="stat-done">0</strong>
+        <strong data-stat="done">0 мин (0%)</strong>
       </div>
       <div class="stat">
         <span>Осталось</span>
-        <strong id="stat-left">0</strong>
+        <strong data-stat="left">0 мин</strong>
       </div>
       <div class="stat">
         <span>Финиш-оценка</span>
-        <strong id="stat-eta">—</strong>
+        <strong data-stat="eta">—</strong>
       </div>
     </section>
 
-    <!-- Здесь позже появится список задач и форма добавления -->
-    <section class="tasks" aria-label="Задачи" id="tasks-root"></section>
+    <!-- Подпись выбранного дня -->
+    <section class="day-label">
+      <h2 class="day-label__title"><span data-day-label>—</span></h2>
+    </section>
+
+    <!-- Список задач, который обновляет ui.renderTasks -->
+    <section class="tasks" aria-label="Задачи">
+      <div data-empty class="empty">Нет заданий на этот день.</div>
+      <div data-tasks class="task-list"></div>
+    </section>
   </main>
 
-  <!-- Один модульный вход: app.js импортирует остальные (ES-modules) -->
+  <!-- Один модульный вход — app.js импортирует остальные (ES-modules) -->
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
