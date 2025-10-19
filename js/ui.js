@@ -1,150 +1,157 @@
-"use strict";
+// js/ui.js
+// Отрисовка интерфейса для «Лёшин планировщик».
+// Здесь только работа с DOM: вставляем данные в HTML, обновляем текст, реагируем на клики.
 
-/**
- * Формат минут в человеко-понятный вид.
- */
-export function formatMinutes(min) {
-  const v = Number.isFinite(min) ? Math.max(0, Math.trunc(min)) : 0;
-  const h = Math.floor(v / 60);
-  const m = v % 60;
-  if (h === 0) return `${m} мин`;
-  return `${h} ч ${m} мин`;
+'use strict';
+
+/* ==============================
+   Основные селекторы DOM
+   ============================== */
+
+// Лучше использовать data-атрибуты, чтобы не зависеть от классов оформления
+const statsElements = {
+  planned: document.querySelector('[data-stat="planned"]'),
+  done: document.querySelector('[data-stat="done"]'),
+  left: document.querySelector('[data-stat="left"]'),
+  eta: document.querySelector('[data-stat="eta"]'),
+};
+
+const taskList = document.querySelector('[data-tasks]');
+const emptyMessage = document.querySelector('[data-empty]');
+const dayLabel = document.querySelector('[data-day-label]');
+
+// Эти элементы должны быть в index.html, иначе просто не обновятся.
+// Если что-то не найдено — предупредим в консоли.
+for (const key in statsElements) {
+  if (!statsElements[key]) {
+    console.warn(`[planner] ui: missing stats element for ${key}`);
+  }
 }
+if (!taskList) console.warn('[planner] ui: missing [data-tasks] container');
+
+/* ==============================
+   Вспомогательные функции
+   ============================== */
 
 /**
- * Рендер карточек дашборда.
- * Ожидаем stats: { total, done, left, eta?: null | { minutes } }
+ * Очищает содержимое DOM-элемента.
  */
-export function renderStats(stats = { total: 0, done: 0, left: 0, eta: null }) {
-  const elTotal = document.getElementById("stat-total");
-  const elDone  = document.getElementById("stat-done");
-  const elLeft  = document.getElementById("stat-left");
-  const elEta   = document.getElementById("stat-eta");
-
-  const safeInt = (v) => Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0;
-
-  const total = safeInt(stats.total);
-  const done  = safeInt(stats.done);
-  const left  = safeInt(stats.left);
-  const etaMinutes = stats && stats.eta && Number.isFinite(stats.eta.minutes)
-    ? Math.max(0, Math.trunc(stats.eta.minutes))
-    : null;
-
-  if (elTotal) elTotal.textContent = formatMinutes(total);
-  if (elDone)  elDone.textContent  = formatMinutes(done);
-  if (elLeft)  elLeft.textContent  = formatMinutes(left);
-  if (elEta)   elEta.textContent   = (etaMinutes !== null) ? formatMinutes(etaMinutes) : "—";
-}
-
-/* =========================
-   БАЗОВАЯ НАВИГАЦИЯ (Шаг 5)
-   ========================= */
-
-/**
- * Служебные хелперы
- */
-function $id(id) { return document.getElementById(id); }
-function setHidden(el, hidden) {
-  if (!el) return;
-  if (hidden) el.setAttribute("hidden", ""); else el.removeAttribute("hidden");
+function clearElement(el) {
+  if (el) el.innerHTML = '';
 }
 
 /**
- * Подсветка активной вкладки (кнопки)
+ * Создаёт DOM-элемент задачи.
+ * @param {object} task - одна задача ({id, title, minutesPlanned, minutesDone, isDone})
+ * @returns {HTMLElement} <div class="task-item">...</div>
  */
-function setActiveTab(view) {
-  const btnToday    = $id("btn-today");
-  const btnSchedule = $id("btn-schedule");
-  const btnCalendar = $id("btn-calendar");
+function createTaskElement(task) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'task-item';
 
-  const map = {
-    dashboard: btnToday,
-    schedule: btnSchedule,
-    calendar: btnCalendar,
-  };
+  // Чекбокс
+  const checkbox = document.createElement('input');
+  checkbox.type = 'checkbox';
+  checkbox.checked = !!task.isDone;
+  checkbox.dataset.id = task.id;
+  checkbox.className = 'task-checkbox';
 
-  for (const btn of [btnToday, btnSchedule, btnCalendar]) {
-    if (!btn) continue;
-    btn.removeAttribute("aria-current");
-    btn.classList.remove("is-active");
-  }
-  const active = map[view];
-  if (active) {
-    active.setAttribute("aria-current", "page");
-    active.classList.add("is-active");
-  }
+  // Текст задания
+  const label = document.createElement('label');
+  label.textContent = task.title;
+  label.className = 'task-title';
+
+  // Минуты (план)
+  const minutes = document.createElement('span');
+  minutes.className = 'task-minutes';
+  minutes.textContent = `${task.minutesPlanned} мин`;
+
+  // Если задача выполнена — добавим визуальный стиль
+  if (task.isDone) wrapper.classList.add('done');
+
+  wrapper.append(checkbox, label, minutes);
+  return wrapper;
 }
 
 /**
- * Показ/скрытие секций-контейнеров
+ * Навешивает обработчики кликов на чекбоксы.
+ * @param {HTMLElement} container
+ * @param {object} handlers - { onToggle(id:boolean) }
  */
-function showView(view) {
-  const vDash = $id("view-dashboard");
-  const vSch  = $id("view-schedule");
-  const vCal  = $id("view-calendar");
+function bindTaskHandlers(container, handlers = {}) {
+  if (!container || !handlers.onToggle) return;
 
-  setHidden(vDash, view !== "dashboard");
-  setHidden(vSch,  view !== "schedule");
-  setHidden(vCal,  view !== "calendar");
+  container.addEventListener('change', (ev) => {
+    const target = ev.target;
+    if (target && target.matches('input[type="checkbox"][data-id]')) {
+      const id = target.dataset.id;
+      const isDone = target.checked;
+      handlers.onToggle(id, isDone);
+    }
+  });
+}
+
+/* ==============================
+   Основные функции отрисовки
+   ============================== */
+
+/**
+ * Обновляет сводные показатели (4 блока вверху).
+ * @param {object} totals - { planned, done, left, percent }
+ * @param {string} etaText - текст финиш-оценки
+ */
+export function renderStats(totals, etaText = '') {
+  if (!totals || typeof totals !== 'object') return;
+
+  if (statsElements.planned)
+    statsElements.planned.textContent = `${totals.planned} мин`;
+
+  if (statsElements.done)
+    statsElements.done.textContent = `${totals.done} мин (${totals.percent}%)`;
+
+  if (statsElements.left)
+    statsElements.left.textContent = `${totals.left} мин`;
+
+  if (statsElements.eta)
+    statsElements.eta.textContent = etaText || '';
 }
 
 /**
- * Публичные функции для открытия разделов
+ * Отрисовывает список задач для выбранного дня.
+ * @param {Array} tasks
+ * @param {object} [handlers] - { onToggle(id:boolean) }
+ * @param {string} [labelText] - подпись дня (например, "Завтра" или "Понедельник 20 октября")
  */
-export function openDashboard() {
-  setActiveTab("dashboard");
-  showView("dashboard");
-  // Здесь уже отрисованы карточки renderStats(...)
-}
-export function openSchedule() {
-  setActiveTab("schedule");
-  showView("schedule");
-  // Плейсхолдер: позже добавим таблицу/редактор расписания
-  const host = $id("view-schedule");
-  if (host && !host.dataset.init) {
-    host.dataset.init = "1";
-    host.textContent = "Раздел «Расписание» в разработке…";
+export function renderTasks(tasks = [], handlers = {}, labelText = '') {
+  if (!taskList) return;
+
+  clearElement(taskList);
+
+  if (Array.isArray(tasks) && tasks.length > 0) {
+    for (const t of tasks) {
+      const el = createTaskElement(t);
+      taskList.appendChild(el);
+    }
+    if (emptyMessage) emptyMessage.style.display = 'none';
+  } else {
+    // Если задач нет
+    if (emptyMessage) {
+      emptyMessage.style.display = 'block';
+      emptyMessage.textContent = 'Нет заданий на этот день.';
+    }
   }
-}
-export function openCalendar() {
-  setActiveTab("calendar");
-  showView("calendar");
-  // Плейсхолдер: позже будет календарь
-  const host = $id("view-calendar");
-  if (host && !host.dataset.init) {
-    host.dataset.init = "1";
-    host.textContent = "Раздел «Календарь» в разработке…";
-  }
+
+  if (dayLabel) dayLabel.textContent = labelText || '';
+
+  // Навесим обработчики чекбоксов
+  bindTaskHandlers(taskList, handlers);
 }
 
-/**
- * Привязка обработчиков к кнопкам навигации
- * Вход: callbacks = { onToday, onSchedule, onCalendar }
- */
-export function bindNav(callbacks = {}) {
-  const btnToday    = $id("btn-today");
-  const btnSchedule = $id("btn-schedule");
-  const btnCalendar = $id("btn-calendar");
+/* ==============================
+   Default export
+   ============================== */
 
-  if (btnToday) {
-    btnToday.addEventListener("click", (e) => {
-      e.preventDefault();
-      openDashboard();
-      if (typeof callbacks.onToday === "function") callbacks.onToday();
-    });
-  }
-  if (btnSchedule) {
-    btnSchedule.addEventListener("click", (e) => {
-      e.preventDefault();
-      openSchedule();
-      if (typeof callbacks.onSchedule === "function") callbacks.onSchedule();
-    });
-  }
-  if (btnCalendar) {
-    btnCalendar.addEventListener("click", (e) => {
-      e.preventDefault();
-      openCalendar();
-      if (typeof callbacks.onCalendar === "function") callbacks.onCalendar();
-    });
-  }
-}
+export default {
+  renderStats,
+  renderTasks,
+};
