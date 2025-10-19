@@ -1,64 +1,72 @@
 "use strict";
-// Шаг 3 (обновлённый): статless-инициализация без LocalStorage.
-// Каждый запуск начинаем с дашборда и чистого состояния (по дефолту).
+// Этап 1 — Шаг 4: stateless-инициализация.
+// Ничего не сохраняем между сессиями. На каждый запуск — чистое состояние и дашборд.
 
-// Обрати внимание: storage.js больше не импортируем.
 import { toDateKey, getToday } from "./date.js";
 import { computeTotals } from "./compute.js";
 import { renderStats } from "./ui.js";
 
-// ❗ Мы ПРИНЦИПИАЛЬНО НЕ сохраняем state между сессиями.
-// Это статless-подход: все данные — только в оперативной памяти на время вкладки.
+// Стартовое состояние текущей вкладки (живёт только пока открыта страница)
 const DEFAULT_STATE = {
-  tasks: [],                      // список задач текущей сессии
-  lastOpened: toDateKey(getToday()) // просто техническая метка «сегодня»
+  tasks: [],                         // [{ minutes:number, done:boolean, ... }]
+  lastOpened: toDateKey(getToday()), // техническая метка на сегодня (локально)
 };
 
+function clone(obj) {
+  return (typeof structuredClone === "function")
+    ? structuredClone(obj)
+    : JSON.parse(JSON.stringify(obj));
+}
+
+function normalizeStats(raw) {
+  // Поддержка вариантов { total, done, left, eta } / { planned, done, remaining, eta }
+  const total = (raw && (raw.total ?? raw.planned)) ?? 0;
+  const done  = (raw && raw.done) ?? 0;
+  const left  = (raw && (raw.left ?? raw.remaining)) ?? Math.max(0, total - done);
+  const eta   = (raw && raw.eta) ?? null;
+  return { total, done, left, eta };
+}
+
 function init() {
-  console.log("[planner] init() — stateless mode");
+  console.log("[planner] init() — stateless");
 
-  // 1) Создаём чистое состояние на каждую загрузку страницы
-  const state = structuredClone
-    ? structuredClone(DEFAULT_STATE)
-    : JSON.parse(JSON.stringify(DEFAULT_STATE));
+  // 1) Чистое состояние на каждую загрузку
+  const state = clone(DEFAULT_STATE);
 
-  // 2) Считаем показатели (если computeTotals ещё заглушка — защитимся)
+  // 2) Счёт показателей
   let stats = { total: 0, done: 0, left: 0, eta: null };
   try {
     const raw = computeTotals ? computeTotals(state.tasks) : null;
-    // Нормализация на случай разных имён полей в computeTotals
-    const total = (raw && (raw.total ?? raw.planned)) ?? 0;
-    const done  = (raw && raw.done) ?? 0;
-    const left  = (raw && (raw.left ?? raw.remaining)) ?? Math.max(0, total - done);
-    const eta   = (raw && raw.eta) ?? null;
-    stats = { total, done, left, eta };
+    stats = normalizeStats(raw || stats);
   } catch (e) {
-    console.warn("[planner] computeTotals failed, using zeros:", e);
+    console.warn("[planner] computeTotals failed; using zeros:", e);
   }
 
   // 3) Рендерим дашборд (карточки показателей)
   renderStats(stats);
 
-  // 4) Отладочные хелперы (только в текущей вкладке, НЕ сохраняются)
+  // 4) Отладочные хелперы (живут только в этой вкладке — не сохраняются)
   // Пример:
-  //   window.__LP_STATE__.tasks.push({ minutes: 30, done: false });
-  //   window.__LP_RECALC__();
+  //   window.__LP_STATE__.tasks.push({ minutes: 40, done: true });
+  //   window.__LP_STATE__.tasks.push({ minutes: 25, done: false });
+  //   window.__LP_RECALC__(); // карточки обновятся
   window.__LP_STATE__ = state;
   window.__LP_RECALC__ = () => {
-    const raw = computeTotals ? computeTotals(state.tasks) : null;
-    const total = (raw && (raw.total ?? raw.planned)) ?? 0;
-    const done  = (raw && raw.done) ?? 0;
-    const left  = (raw && (raw.left ?? raw.remaining)) ?? Math.max(0, total - done);
-    const eta   = (raw && raw.eta) ?? null;
-    const s = { total, done, left, eta };
-    renderStats(s);
-    return s;
+    try {
+      const raw = computeTotals ? computeTotals(state.tasks) : null;
+      const s = normalizeStats(raw || {});
+      renderStats(s);
+      return s;
+    } catch (e) {
+      console.warn("[planner] recalc failed:", e);
+      const s = { total: 0, done: 0, left: 0, eta: null };
+      renderStats(s);
+      return s;
+    }
   };
+
+  // Если раньше что-то писали в LocalStorage — подчистим старый ключ (необязательно).
+  try { localStorage.removeItem("planner.state.v1"); } catch {}
 }
 
 init();
-
-// (Необязательно) Если раньше кое-что сохраняли — подчистим старый ключ,
-// чтобы не путал при ручных проверках в DevTools.
-// Можно удалить строку позже, это просто разовая «миграция».
-try { localStorage.removeItem("planner.state.v1"); } catch {}
