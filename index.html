@@ -1,46 +1,60 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Лёшин планировщик</title>
-  <link rel="stylesheet" href="assets/styles.css" />
-</head>
-<body>
-  <h1>Лёшин планировщик</h1>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Лёшин планировщик</title>
 
-  <!-- Навигация между разделами -->
-  <nav class="tabs" aria-label="Разделы">
-    <button id="btn-today" class="tab is-active" aria-current="page">Сегодня</button>
-    <button id="btn-schedule" class="tab">Расписание</button>
-    <button id="btn-calendar" class="tab">Календарь</button>
-  </nav>
+    <!-- Обрати внимание на относительный путь -->
+    <link rel="stylesheet" href="./assets/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1 class="app-title">Лёшин планировщик</h1>
 
-  <!-- Дашборд: карточки показателей -->
-  <section id="view-dashboard">
-    <div class="card">
-      <strong>Общая нагрузка</strong>
-      <div id="stat-total">—</div>
-    </div>
-    <div class="card">
-      <strong>Выполнено</strong>
-      <div id="stat-done">—</div>
-    </div>
-    <div class="card">
-      <strong>Осталось</strong>
-      <div id="stat-left">—</div>
-    </div>
-    <div class="card">
-      <strong>Финиш-оценка</strong>
-      <div id="stat-eta">—</div>
-    </div>
-  </section>
+      <nav class="app-nav">
+        <button type="button" data-action="today">Сегодня</button>
+        <button type="button" data-action="schedule">Расписание</button>
+        <button type="button" data-action="calendar">Календарь</button>
+      </nav>
+    </header>
 
-  <!-- Плейсхолдеры для будущих экранов -->
-  <section id="view-schedule" hidden></section>
-  <section id="view-calendar" hidden></section>
+    <main class="app-main">
+      <!-- Подпись выбранного дня (ui.js обновляет textContent этого элемента) -->
+      <section class="day-header">
+        <h2 class="day-title" data-day-label>—</h2>
+      </section>
 
-  <!-- Точка входа приложения -->
-  <script type="module" src="js/app.js"></script>
-</body>
+      <!-- Четыре показателя. ВАЖНО: именно эти data-атрибуты -->
+      <section class="stats">
+        <div class="stat">
+          <div class="stat-label">Общая нагрузка</div>
+          <div class="stat-value" data-stat="planned">0 мин</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Выполнено</div>
+          <div class="stat-value" data-stat="done">0 мин (0%)</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Осталось</div>
+          <div class="stat-value" data-stat="left">0 мин</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Финиш-оценка</div>
+          <div class="stat-value" data-stat="eta">—</div>
+        </div>
+      </section>
+
+      <!-- Список задач. ВАЖНО: [data-empty] и [data-tasks] -->
+      <section class="tasks">
+        <div class="tasks-empty" data-empty style="display:none;">
+          Нет заданий на этот день.
+        </div>
+        <div class="tasks-list" data-tasks></div>
+      </section>
+    </main>
+
+    <!-- Важно: подключаем в конце body как ES-модуль -->
+    <script type="module" src="./js/app.js"></script>
+  </body>
 </html>

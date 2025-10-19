@@ -1,7 +1,6 @@
 // js/app.js
 // Точка входа «Лёшин планировщик».
-// Здесь мы связываем: хранилище (storage) -> даты (date) -> вычисления (compute) -> UI (ui).
-// Важно: этот модуль работает как ES-модуль; в index.html должен быть <script type="module" src="js/app.js"></script>
+// Связываем: storage -> date -> compute -> ui + добавляем seed-данные при пустом состоянии.
 
 'use strict';
 
@@ -21,7 +20,7 @@ import { renderStats, renderTasks } from './ui.js';
 // Состояние приложения (в LocalStorage лежит объект { selectedDate, days })
 let state = null;
 
-// Небольшие селекторы для навигационных кнопок (стабы обработчиков)
+// Селекторы навигационных кнопок (пока стабы обработчиков)
 const btnToday = document.querySelector('[data-action="today"]');
 const btnSchedule = document.querySelector('[data-action="schedule"]');
 const btnCalendar = document.querySelector('[data-action="calendar"]');
@@ -32,7 +31,6 @@ const btnCalendar = document.querySelector('[data-action="calendar"]');
 
 /**
  * Гарантирует, что в state.days есть запись для данной даты.
- * Зачем: чтобы код дальше не падал на undefined.
  */
 function ensureDay(dateKey) {
   if (!state.days) state.days = {};
@@ -54,7 +52,6 @@ function getTasksForDate(dateKey) {
  * Установить выбранную дату и перерисовать экран.
  */
 function setSelectedDate(dateKey) {
-  // Мини-проверка корректности ключа
   const d = parseDateKey(dateKey); // нормализуем к локальной полуночи
   const normalizedKey = toDateKey(d);
 
@@ -64,16 +61,62 @@ function setSelectedDate(dateKey) {
 }
 
 /* ==============================
+   Seed-данные (2.6)
+   ============================== */
+
+/**
+ * Простой генератор id — достаточно уникален для демо-задач.
+ */
+function makeId(prefix = 't') {
+  const rnd = Math.floor(Math.random() * 1e6);
+  return `${prefix}_${Date.now().toString(36)}_${rnd.toString(36)}`;
+}
+
+/**
+ * Если у выбранной даты нет задач — создаём пару «учебных» заданий.
+ * Делаем это только один раз (при первом запуске), чтобы у пользователя
+ * сразу был виден рабочий UI.
+ */
+function seedIfEmpty(dateKey) {
+  const tasks = getTasksForDate(dateKey);
+  if (tasks.length > 0) return; // уже что-то есть — не трогаем
+
+  state.days[dateKey].tasks = [
+    {
+      id: makeId('m'),
+      title: 'Математика: решить №1–5 из параграфа 12',
+      minutesPlanned: 40,
+      minutesDone: 0,
+      isDone: false,
+    },
+    {
+      id: makeId('ph'),
+      title: 'Физика: прочитать §8 и сделать конспект',
+      minutesPlanned: 25,
+      minutesDone: 0,
+      isDone: false,
+    },
+    {
+      id: makeId('ru'),
+      title: 'Русский: упражнение 134 (1–3)',
+      minutesPlanned: 20,
+      minutesDone: 0,
+      isDone: false,
+    },
+  ];
+
+  saveState(state);
+}
+
+/* ==============================
    Рендер всего экрана
    ============================== */
 
 /**
- * Возвращает человекочитаемую подпись дня (напр., "Понедельник, 20 октября").
+ * Возвращает человекочитаемую подпись дня (например, "понедельник, 20 октября").
  */
 function makeDayLabel(dateKey) {
   const d = parseDateKey(dateKey);
-  // Для начинающих: toLocaleDateString удобен для локализации.
-  // Попросим день недели, число и месяц (год опустим для краткости).
   return d.toLocaleDateString(undefined, {
     weekday: 'long',
     day: 'numeric',
@@ -83,13 +126,6 @@ function makeDayLabel(dateKey) {
 
 /**
  * Обработчик переключения чекбоксов задач.
- * @param {string} id - id задачи
- * @param {boolean} isDone - новое значение чекбокса
- *
- * Логика простая:
- * - ставим task.isDone = isDone
- * - если включили, minutesDone = minutesPlanned (считаем как полностью сделано)
- * - если выключили, minutesDone не трогаем (или можно обнулить — на твой вкус)
  */
 function handleToggleTask(id, isDone) {
   const dateKey = state.selectedDate;
@@ -99,8 +135,10 @@ function handleToggleTask(id, isDone) {
     if (t.id === id) {
       t.isDone = !!isDone;
       if (t.isDone) {
-        const planned = Number.isFinite(+t.minutesPlanned) ? Math.max(0, Math.floor(+t.minutesPlanned)) : 0;
-        t.minutesDone = planned;
+        const planned = Number.isFinite(+t.minutesPlanned)
+          ? Math.max(0, Math.floor(+t.minutesPlanned))
+          : 0;
+        t.minutesDone = planned; // считаем «выполнено на 100%»
       }
       break;
     }
@@ -112,9 +150,6 @@ function handleToggleTask(id, isDone) {
 
 /**
  * Главная функция рендера дашборда.
- * 1) Берём задачи выбранного дня
- * 2) Считаем totals + eta
- * 3) Обновляем верхние показатели и список задач
  */
 function renderAll() {
   const dateKey = state.selectedDate;
@@ -134,9 +169,9 @@ function renderAll() {
 /**
  * Инициализируем state из LocalStorage.
  * Если state.selectedDate нет — по умолчанию ставим "завтра".
+ * После этого — подложим seed-данные, если список задач пуст.
  */
 function initState() {
-  // Значения по умолчанию на случай пустого хранилища
   const defaults = {
     selectedDate: null,
     days: {},
@@ -144,20 +179,21 @@ function initState() {
 
   state = loadState(defaults);
 
-  // Если дата не выбрана — возьмём завтра (по конвенции этапа 2)
   if (!state.selectedDate) {
     const tomorrowKey = toDateKey(getTomorrow());
     state.selectedDate = tomorrowKey;
     saveState(state);
   }
 
-  // Подстрахуемся, что структура на выбранную дату существует
+  // Страхуем структуру
   ensureDay(state.selectedDate);
+
+  // SEED: если задач нет — создадим минимальный пример
+  seedIfEmpty(state.selectedDate);
 }
 
 /**
- * Навешиваем обработчики на кнопки навигации.
- * Сейчас это лёгкие стабы — полноценная логика появится на следующих этапах.
+ * Навешиваем обработчики на кнопки навигации (пока стабы для расписания/календаря).
  */
 function initNavHandlers() {
   if (btnToday) {
@@ -168,14 +204,14 @@ function initNavHandlers() {
 
   if (btnSchedule) {
     btnSchedule.addEventListener('click', () => {
-      // TODO: откроем экран редактирования расписания (этап 3)
+      // TODO: экран редактирования расписания (этап 3)
       console.info('[planner] schedule: stub click (будет реализовано позже)');
     });
   }
 
   if (btnCalendar) {
     btnCalendar.addEventListener('click', () => {
-      // TODO: откроем календарь выбора даты (этап 3)
+      // TODO: календарь выбора даты (этап 3)
       console.info('[planner] calendar: stub click (будет реализовано позже)');
     });
   }
@@ -190,7 +226,5 @@ function bootstrap() {
   renderAll();
 }
 
-// Запускаем приложение, когда DOM готов.
-// Для простоты вызовем сразу: модуль грузится после HTML, поэтому DOM уже есть.
-// Если подключение скрипта в <head>, тогда стоит повеситься на DOMContentLoaded.
+// Скрипт подключается после HTML, поэтому DOM уже готов — можно запускать сразу.
 bootstrap();
