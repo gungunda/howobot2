@@ -326,3 +326,13 @@ body {
 .calendar-footer {
   text-align: center;
 }
+/* === Validation (Schedule) === */
+.schedule-row input.invalid {
+  border-color: #e74c3c;
+  box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.15);
+}
+
+.schedule-errors {
+  margin-top: 8px;
+  color: #e74c3c;
+}

@@ -3,7 +3,8 @@
 // Этап 3.2: шаблоны расписания
 // Этап 3.3: UI редактора расписания
 // Этап 3.4: применение шаблона к дате
-// Этап 3.5: календарь — сетка месяца с навигацией
+// Этап 3.5: календарь — сетка месяца
+// Этап 3.6: валидации в редакторе расписания
 
 'use strict';
 
@@ -54,7 +55,7 @@ const calGridEl   = document.querySelector('[data-cal-grid]');
    ============================== */
 
 let state = null;
-let scheduleCurrentWeekday = 'mon';
+let scheduleCurrentWeekday = 'mon';   // объявлено ОДИН раз
 
 // Текущий показ в календаре (год/месяц для сетки)
 let calYear  = null; // число, например 2025
@@ -273,6 +274,66 @@ function applyTemplateToDate(weekday, dateKey) {
    3.3 — UI редактора расписания
    ============================== */
 
+/** Создаём (или находим) баннер ошибок внизу редактора. */
+function ensureErrorBanner() {
+  if (!viewSchedule) return null;
+  let banner = viewSchedule.querySelector('[data-schedule-errors]');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.dataset.scheduleErrors = '';
+    banner.className = 'schedule-errors muted small';
+    banner.style.display = 'none';
+    viewSchedule.appendChild(banner);
+  }
+  return banner;
+}
+
+/** Показать/скрыть сообщение об ошибках. */
+function showErrors(messages = []) {
+  const banner = ensureErrorBanner();
+  if (!banner) return;
+  if (!messages.length) {
+    banner.style.display = 'none';
+    banner.textContent = '';
+    return;
+  }
+  banner.style.display = 'block';
+  banner.textContent = messages.join(' · ');
+}
+
+/** Добавляет/снимает красную подсветку ошибки для input. */
+function markInvalid(input, invalid) {
+  if (!input) return;
+  if (invalid) input.classList.add('invalid');
+  else input.classList.remove('invalid');
+}
+
+/** Нормализация ввода минут «на лету»: только целые ≥ 0. */
+function bindMinutesSanitizer(inputNumber) {
+  if (!inputNumber || inputNumber.dataset.sanitizerBound) return;
+  inputNumber.addEventListener('input', () => {
+    // оставим только цифры
+    const digits = String(inputNumber.value).replace(/[^\d]/g, '');
+    inputNumber.value = digits;
+  });
+  inputNumber.addEventListener('blur', () => {
+    const n = Math.max(0, Math.floor(Number(inputNumber.value || 0)));
+    inputNumber.value = String(n);
+  });
+  // Небольшой UX: Enter в поле минут добавляет новую строку
+  inputNumber.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && btnAddRow) {
+      e.preventDefault();
+      btnAddRow.click();
+    }
+  });
+  inputNumber.dataset.sanitizerBound = '1';
+}
+
+/**
+ * Рендерит строки редактирования для выбранного дня недели.
+ * Каждая строка: input title, input minutes, кнопка удалить.
+ */
 function renderScheduleRows(weekday) {
   if (!scheduleListEl) return;
   scheduleListEl.innerHTML = '';
@@ -299,6 +360,9 @@ function renderScheduleRows(weekday) {
     inputMinutes.placeholder = '0';
     inputMinutes.value = String(tpl[i].minutesPlanned);
 
+    // биндим «санитайзер» чисел
+    bindMinutesSanitizer(inputMinutes);
+
     const actions = document.createElement('div');
     actions.className = 'row-actions';
 
@@ -312,8 +376,58 @@ function renderScheduleRows(weekday) {
     row.append(inputTitle, inputMinutes, actions);
     scheduleListEl.appendChild(row);
   }
+
+  // при переходе на другой день — очистим возможные старые ошибки
+  showErrors([]);
 }
 
+/** Вспомогательная: проверка одной строки, возврат нормализованных данных или ошибок. */
+function validateRow(row) {
+  const [inputTitle, inputMinutes] = row.querySelectorAll('input');
+  const title = String(inputTitle?.value ?? '').trim();
+  const minutes = Math.max(0, Math.floor(Number(inputMinutes?.value ?? 0)));
+  const errs = [];
+
+  // Правила
+  if (!title) errs.push('пустое название');
+  if (!Number.isFinite(minutes) || minutes < 0) errs.push('минуты некорректны');
+
+  // Подсветка
+  markInvalid(inputTitle, !title);
+  markInvalid(inputMinutes, !Number.isFinite(minutes) || minutes < 0);
+
+  return { ok: errs.length === 0, title, minutes, errors: errs };
+}
+
+/** Собираем и валидируем все строки. Возвращаем {validTasks, messages}. */
+function collectAndValidateTemplate() {
+  const rows = Array.from(scheduleListEl?.querySelectorAll('.schedule-row') || []);
+  const validTasks = [];
+  const messages = [];
+
+  if (!rows.length) {
+    messages.push('нет строк для сохранения');
+    return { validTasks, messages };
+  }
+
+  rows.forEach((row, idx) => {
+    const res = validateRow(row);
+    if (res.ok) {
+      validTasks.push({ title: res.title, minutesPlanned: res.minutes });
+    } else {
+      messages.push(`строка ${idx + 1}: ${res.errors.join(', ')}`);
+    }
+  });
+
+  // Если все строки пустые — добавим понятное сообщение
+  if (validTasks.length === 0) {
+    messages.push('все строки пустые — укажите название или минуты');
+  }
+
+  return { validTasks, messages };
+}
+
+/** Подсветка активной кнопки дня недели. */
 function highlightActiveWeekday() {
   if (!weekdaySwitch) return;
   const buttons = weekdaySwitch.querySelectorAll('button[data-weekday]');
@@ -323,21 +437,7 @@ function highlightActiveWeekday() {
   });
 }
 
-function collectTemplateFromDOM() {
-  if (!scheduleListEl) return [];
-  const rows = Array.from(scheduleListEl.querySelectorAll('.schedule-row'));
-  const out = [];
-  for (const r of rows) {
-    const [inputTitle, inputMinutes] = r.querySelectorAll('input');
-    const title = String(inputTitle?.value ?? '').trim();
-    const minutes = Math.max(0, Math.floor(Number(inputMinutes?.value ?? 0)));
-    if (title || minutes > 0) {
-      out.push({ title, minutesPlanned: minutes });
-    }
-  }
-  return out;
-}
-
+/** Рендерит редактор: подсветка дня + строки + бинды на кнопки. */
 function renderScheduleEditor() {
   if (!viewSchedule) return;
 
@@ -372,6 +472,8 @@ function renderScheduleEditor() {
       inputMinutes.step = '1';
       inputMinutes.placeholder = '0';
 
+      bindMinutesSanitizer(inputMinutes);
+
       const actions = document.createElement('div');
       actions.className = 'row-actions';
 
@@ -386,21 +488,47 @@ function renderScheduleEditor() {
       scheduleListEl.appendChild(row);
 
       inputTitle.focus();
+      showErrors([]); // прячем старые ошибки
     });
     btnAddRow.dataset.bound = '1';
   }
 
   if (btnSaveTpl && !btnSaveTpl.dataset.bound) {
     btnSaveTpl.addEventListener('click', () => {
-      const tasks = collectTemplateFromDOM();
-      setTemplate(scheduleCurrentWeekday, tasks);
-      console.info('[planner] schedule: template saved for', scheduleCurrentWeekday, tasks);
+      const { validTasks, messages } = collectAndValidateTemplate();
+      if (messages.length) {
+        showErrors(messages);
+      } else {
+        showErrors([]);
+      }
+
+      if (validTasks.length > 0) {
+        setTemplate(scheduleCurrentWeekday, validTasks);
+        console.info('[planner] schedule: template saved for', scheduleCurrentWeekday, validTasks);
+      } else {
+        console.warn('[planner] schedule: nothing to save (invalid/empty)');
+      }
     });
     btnSaveTpl.dataset.bound = '1';
   }
 
   if (btnApplyTemplate && !btnApplyTemplate.dataset.bound) {
     btnApplyTemplate.addEventListener('click', () => {
+      // Перед применением — тоже валидация (сохранять не обязательно, но пустоту не применяем)
+      const { validTasks, messages } = collectAndValidateTemplate();
+      if (messages.length) {
+        showErrors(messages);
+      } else {
+        showErrors([]);
+      }
+      if (validTasks.length === 0) {
+        console.warn('[planner] schedule: template apply aborted — empty/invalid');
+        return;
+      }
+
+      // Если валидно — можно и сохранить шаблон заодно, чтобы не потерялось
+      setTemplate(scheduleCurrentWeekday, validTasks);
+
       const dateKey = state.selectedDate;
       if (!dateKey) return;
       applyTemplateToDate(scheduleCurrentWeekday, dateKey);
@@ -415,55 +543,34 @@ function renderScheduleEditor() {
    3.5 — Календарь: сетка месяца
    ============================== */
 
-/**
- * Получаем число дней в месяце.
- * Пример: daysInMonth(2025, 0) -> 31 (январь).
- */
 function daysInMonth(year, month) {
   return new Date(year, month + 1, 0).getDate();
 }
 
-/**
- * Возвращает индекс дня недели (1..7) с понедельника,
- * где 1 = Пн, 7 = Вс.
- */
 function weekdayMonFirst(date) {
   const js = date.getDay(); // 0..6, 0 = Вс
-  return js === 0 ? 7 : js; // 1..7
+  return js === 0 ? 7 : js; // 1..7, где 1 = Пн
 }
 
-/**
- * Пересобирает лейбл и сетку календаря на основе calYear/calMonth.
- */
 function renderCalendar() {
   if (!calGridEl || calYear == null || calMonth == null) return;
 
-  // Заголовок месяца
   const label = new Date(calYear, calMonth, 1).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long',
   });
   if (calLabelEl) calLabelEl.textContent = label;
 
-  // Выбранная дата и "сегодня" для подсветки
   const selectedKey = state.selectedDate;
   const todayKey = toDateKey(getToday());
 
-  // Подсчёт смещения первой недели (Пн..Вс)
   const firstDay = new Date(calYear, calMonth, 1);
   const firstWeekday = weekdayMonFirst(firstDay); // 1..7
-  const totalDays = daysInMonth(calYear, calMonth);
-
-  // Сколько ячеек до 1-го числа (с Пн)
   const leading = firstWeekday - 1; // 0..6
-
-  // Сколько ячеек всего рендерим — делаем 6 недель по 7 (42), чтобы сетка не "прыгала"
   const totalCells = 42;
 
-  // Начальная дата для сетки — это (1-е число) минус leading дней
   const startDate = new Date(calYear, calMonth, 1 - leading);
 
-  // Очищаем сетку
   calGridEl.innerHTML = '';
 
   for (let i = 0; i < totalCells; i++) {
@@ -479,8 +586,6 @@ function renderCalendar() {
     if (key === selectedKey) cell.classList.add('selected');
 
     cell.textContent = String(d.getDate());
-
-    // Клик по ячейке — выбираем дату и переходим на дашборд
     cell.addEventListener('click', () => {
       setSelectedDate(key);
       switchView('dashboard');
@@ -490,25 +595,15 @@ function renderCalendar() {
   }
 }
 
-/**
- * Открыть календарь, синхронизировав месяц с выбранной датой.
- */
 function openCalendarForSelectedDate() {
   const base = parseDateKey(state.selectedDate ?? toDateKey(getToday()));
   calYear = base.getFullYear();
   calMonth = base.getMonth();
   renderCalendar();
 
-  // Навешиваем prev/next (однократно)
   if (calPrevBtn && !calPrevBtn.dataset.bound) {
     calPrevBtn.addEventListener('click', () => {
-      // Переходим на предыдущий месяц
-      if (calMonth === 0) {
-        calMonth = 11;
-        calYear -= 1;
-      } else {
-        calMonth -= 1;
-      }
+      if (calMonth === 0) { calMonth = 11; calYear -= 1; } else { calMonth -= 1; }
       renderCalendar();
     });
     calPrevBtn.dataset.bound = '1';
@@ -516,13 +611,7 @@ function openCalendarForSelectedDate() {
 
   if (calNextBtn && !calNextBtn.dataset.bound) {
     calNextBtn.addEventListener('click', () => {
-      // Переходим на следующий месяц
-      if (calMonth === 11) {
-        calMonth = 0;
-        calYear += 1;
-      } else {
-        calMonth += 1;
-      }
+      if (calMonth === 11) { calMonth = 0; calYear += 1; } else { calMonth += 1; }
       renderCalendar();
     });
     calNextBtn.dataset.bound = '1';
