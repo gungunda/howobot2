@@ -1,26 +1,23 @@
 // js/ui.js
-// Рендер статов и задач. Без логики состояния и без "улучшайзинга".
+// Рендер статов и задач. Без логики состояния.
 'use strict';
 
 /**
  * renderStats(totals, eta)
  * totals: { planned, done, left, percent }
  * eta: string
- * Пишем в [data-stats] ИЛИ в .stats (как у тебя в разметке).
+ * Пишем в [data-stats] ИЛИ в .stats (как в твоём CSS).
  */
 export function renderStats(totals, eta) {
   const scope = document.querySelector('[data-view="dashboard"]') || document;
 
-  // 1) пробуем data-узел
+  // пробуем data-узел → иначе .stats
   let root = scope.querySelector('[data-stats]');
-  // 2) иначе — класс .stats (существующий у тебя)
   if (!root) root = scope.querySelector('.stats');
-
   if (!root) return;
 
   const { planned = 0, done = 0, left = 0, percent = 0 } = totals || {};
 
-  // Рисуем стандартную сетку .stats/.stat (совместима с твоим CSS)
   root.innerHTML = `
     <div class="stat">
       <span class="stat-label">Общая нагрузка</span>
@@ -42,16 +39,17 @@ export function renderStats(totals, eta) {
 }
 
 /**
- * renderTasks(tasks, { onToggle }, dayLabel)
+ * renderTasks(tasks, { onToggle, onBump }, dayLabel)
  * - tasks: { id, title, minutesPlanned, donePercent, isDone, _virtual? }[]
  * - onToggle(id, isDone)
+ * - onBump(id, delta) // delta: -10 или +10
  * - dayLabel: строка заголовка
  * Пишем в [data-task-list] ИЛИ [data-tasks] ИЛИ .task-list/.tasks-list.
  */
 export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
   const scope = document.querySelector('[data-view="dashboard"]') || document;
 
-  // заголовок дня (у тебя есть [data-day-label])
+  // заголовок дня (поддерживаем твой data-атрибут и классы)
   const dayTitleEl =
     scope.querySelector('[data-day-label]') ||
     scope.querySelector('.day-label__title') ||
@@ -60,8 +58,8 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
 
   // контейнер списка задач — поддерживаем все варианты
   let list =
-    scope.querySelector('[data-task-list]') || // мой старый вариант
-    scope.querySelector('[data-tasks]') ||     // твой текущий вариант
+    scope.querySelector('[data-task-list]') ||
+    scope.querySelector('[data-tasks]') ||
     scope.querySelector('.task-list') ||
     scope.querySelector('.tasks-list');
 
@@ -76,6 +74,10 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
         <input class="task-checkbox" type="checkbox" data-act="toggle" ${checked}/>
         <div class="task-title">${esc(t.title)} ${badge}</div>
         <div class="task-minutes">${t.minutesPlanned} мин · ${dp}%</div>
+        <div class="task-controls">
+          <button type="button" class="btn" data-act="bump" data-delta="-10">−10%</button>
+          <button type="button" class="btn" data-act="bump" data-delta="+10">+10%</button>
+        </div>
       </div>
     `;
   });
@@ -90,16 +92,14 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
       empty.textContent = 'Нет заданий на этот день.';
     }
   } else {
-    // прячем "пусто", если есть
     const empty =
       scope.querySelector('[data-empty]') ||
       scope.querySelector('.empty');
     if (empty) empty.style.display = 'none';
-
     list.innerHTML = items.join('');
   }
 
-  // делегируем чекбоксы — один обработчик на контейнер
+  // чекбоксы (делегирование)
   list.onchange = (e) => {
     const el = e.target;
     if (!(el instanceof HTMLInputElement)) return;
@@ -108,6 +108,19 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
     const id = row?.getAttribute('data-id');
     if (!id) return;
     handlers.onToggle?.(id, el.checked);
+  };
+
+  // кнопки ±10%
+  list.onclick = (e) => {
+    const el = e.target;
+    if (!(el instanceof HTMLElement)) return;
+    if (el.getAttribute('data-act') !== 'bump') return;
+    const row = el.closest('.task-item');
+    const id = row?.getAttribute('data-id');
+    if (!id) return;
+    const delta = Number((el.getAttribute('data-delta') || '0').replace('%',''));
+    if (!Number.isFinite(delta)) return;
+    handlers.onBump?.(id, delta);
   };
 }
 

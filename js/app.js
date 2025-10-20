@@ -80,7 +80,11 @@ function setActiveNav(viewName) {
 
 function ensureDay(dateKey) {
   if (!state.days) state.days = {};
-  if (!state.days[dateKey]) state.days[dateKey] = { tasks: [] };
+  if (!state.days[dateKey]) {
+    state.days[dateKey] = { tasks: [], meta: { note: '' } }; // ← Day.meta
+  } else if (!state.days[dateKey].meta) {
+    state.days[dateKey].meta = { note: '' };
+  }
 }
 
 function getTasksForDate(dateKey) {
@@ -174,12 +178,20 @@ function setTemplate(weekdayKey, tasks) {
 function applyTemplateToDate(weekdayKey, dateKey) {
   ensureDay(dateKey);
   const tpl = getTemplate(weekdayKey);
-  state.days[dateKey].tasks = tpl.map((t) => ({
+  const nowISO = new Date().toISOString();
+  state.days[dateKey].tasks = tpl.map((t, idx) => ({
     id: makeId('x'),
     title: t.title,
     minutesPlanned: t.minutesPlanned,
     donePercent: 0,
-    isDone: false
+    isDone: false,
+    sortIndex: idx, // ← порядок задач в дне
+    meta: {        // ← Task.meta
+      source: 'template',
+      templateWeekday: weekdayKey,
+      createdAt: nowISO,
+      updatedAt: nowISO
+    }
   }));
   saveState(state);
 }
@@ -202,13 +214,13 @@ function getEffectiveTasks(dateKey) {
   const map = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const weekdayKey = map[jsDay];
 
-  // строим «виртуальные» id, чтобы чекбоксы в UI были стабильными
+  // «виртуальные» id, чтобы чекбоксы в UI были стабильными
   const tpl = getTemplate(weekdayKey);
   return tpl.map((t, idx) => ({
     id: `virt_${weekdayKey}_${idx}`,
     title: t.title,
     minutesPlanned: t.minutesPlanned,
-    minutesDone: 0,
+    donePercent: 0,
     isDone: false,
     _virtual: true,          // маркер: это НЕ материализовано в state.days[dateKey]
     _weekdayKey: weekdayKey  // пригодится, если надо материализовать по действию
@@ -241,6 +253,7 @@ function makeDayLabel(dateKey) {
 function handleToggleTask(id, isDone) {
   const dateKey = state.selectedDate;
   let tasks = getTasksForDate(dateKey);
+  const nowISO = new Date().toISOString();
 
   // Случай A: дата уже материализована — обычная логика
   if (tasks.length > 0) {
@@ -248,6 +261,7 @@ function handleToggleTask(id, isDone) {
       if (t.id === id) {
         t.isDone = !!isDone;
         t.donePercent = t.isDone ? 100 : 0;
+        if (t.meta && typeof t.meta === 'object') t.meta.updatedAt = nowISO;
         break;
       }
     }
@@ -268,6 +282,47 @@ function handleToggleTask(id, isDone) {
     if (real) {
       real.isDone = !!isDone;
       real.donePercent = real.isDone ? 100 : 0;
+      if (real.meta && typeof real.meta === 'object') real.meta.updatedAt = nowISO;
+      saveState(state);
+    }
+    renderAll();
+  }
+}
+
+/** Увеличение/уменьшение прогресса на delta (-10 или +10). */
+function handleBumpPercent(id, delta) {
+  const dateKey = state.selectedDate;
+  let tasks = getTasksForDate(dateKey);
+  const nowISO = new Date().toISOString();
+
+  const clamp = (v) => Math.max(0, Math.min(100, Math.round(v)));
+
+  // Если день уже материализован
+  if (tasks.length > 0) {
+    const t = tasks.find(x => x.id === id);
+    if (t) {
+      const next = clamp((t.donePercent ?? 0) + Number(delta || 0));
+      t.donePercent = next;
+      t.isDone = next >= 100;
+      if (t.meta && typeof t.meta === 'object') t.meta.updatedAt = nowISO;
+      saveState(state);
+      renderAll();
+      return;
+    }
+  }
+
+  // Иначе: работаем с «виртуальной» задачей -> материализуем и повторяем
+  const effective = getEffectiveTasks(dateKey);
+  const target = effective.find((t) => t.id === id);
+  if (target && target._virtual) {
+    applyTemplateToDate(target._weekdayKey, dateKey);
+    tasks = getTasksForDate(dateKey);
+    const real = tasks.find((t) => t.title === target.title && t.minutesPlanned === target.minutesPlanned);
+    if (real) {
+      const next = clamp((real.donePercent ?? 0) + Number(delta || 0));
+      real.donePercent = next;
+      real.isDone = next >= 100;
+      if (real.meta && typeof real.meta === 'object') real.meta.updatedAt = nowISO;
       saveState(state);
     }
     renderAll();
@@ -282,7 +337,11 @@ function renderAll() {
   const eta = etaFromNow(tasksEff);
 
   renderStats(totals, eta);
-  renderTasks(tasksEff, { onToggle: handleToggleTask }, makeDayLabel(dateKey));
+  renderTasks(
+    tasksEff,
+    { onToggle: handleToggleTask, onBump: handleBumpPercent },
+    makeDayLabel(dateKey)
+  );
 }
 
 /* ==============================
