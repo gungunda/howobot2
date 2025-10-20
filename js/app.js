@@ -81,7 +81,7 @@ function setActiveNav(viewName) {
 function ensureDay(dateKey) {
   if (!state.days) state.days = {};
   if (!state.days[dateKey]) {
-    state.days[dateKey] = { tasks: [], meta: { note: '' } }; // ← Day.meta
+    state.days[dateKey] = { tasks: [], meta: { note: '' } }; // Day.meta
   } else if (!state.days[dateKey].meta) {
     state.days[dateKey].meta = { note: '' };
   }
@@ -185,8 +185,8 @@ function applyTemplateToDate(weekdayKey, dateKey) {
     minutesPlanned: t.minutesPlanned,
     donePercent: 0,
     isDone: false,
-    sortIndex: idx, // ← порядок задач в дне
-    meta: {        // ← Task.meta
+    sortIndex: idx, // порядок задач в дне
+    meta: {
       source: 'template',
       templateWeekday: weekdayKey,
       createdAt: nowISO,
@@ -197,20 +197,22 @@ function applyTemplateToDate(weekdayKey, dateKey) {
 }
 
 /* ==============================
-   NEW: эффективные задачи дня
+   NEW: эффективные задачи дня (D+1)
    ============================== */
 
 /**
  * Возвращает фактический список задач для даты.
- * Если у даты нет своих задач — строит «виртуальные» задачи из шаблона дня недели.
+ * Если у даты нет своих задач — строит «виртуальные» задачи из шаблона **следующего дня** (D+1).
  * ВАЖНО: «виртуальные» задачи не сохраняются в state, пока пользователь не начнёт их менять.
  */
 function getEffectiveTasks(dateKey) {
   const own = getTasksForDate(dateKey);
   if (Array.isArray(own) && own.length > 0) return own;
 
+  // D+1: берём шаблон ПРИСВОЕННОГО следующего календарного дня
   const d = parseDateKey(dateKey);
-  const jsDay = d.getDay(); // 0..6, 0=Вс
+  const dPlus1 = addDays(d, 1);
+  const jsDay = dPlus1.getDay(); // 0..6, 0=Вс
   const map = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const weekdayKey = map[jsDay];
 
@@ -223,7 +225,7 @@ function getEffectiveTasks(dateKey) {
     donePercent: 0,
     isDone: false,
     _virtual: true,          // маркер: это НЕ материализовано в state.days[dateKey]
-    _weekdayKey: weekdayKey  // пригодится, если надо материализовать по действию
+    _weekdayKey: weekdayKey  // важно: материализация пойдёт из D+1-шаблона
   }));
 }
 
@@ -270,11 +272,11 @@ function handleToggleTask(id, isDone) {
     return;
   }
 
-  // Случай B: клик по «виртуальной» задаче из шаблона
+  // Случай B: клик по «виртуальной» задаче из шаблона (теперь — D+1)
   const effective = getEffectiveTasks(dateKey);
   const target = effective.find((t) => t.id === id);
   if (target && target._virtual) {
-    // 1) материализуем весь шаблон в дату
+    // 1) материализуем именно D+1-шаблон в дату
     applyTemplateToDate(target._weekdayKey, dateKey);
     // 2) повторим действие уже на реальных задачах
     tasks = getTasksForDate(dateKey);
@@ -311,7 +313,7 @@ function handleBumpPercent(id, delta) {
     }
   }
 
-  // Иначе: работаем с «виртуальной» задачей -> материализуем и повторяем
+  // Иначе: работаем с «виртуальной» задачей -> материализуем D+1-шаблон и повторяем
   const effective = getEffectiveTasks(dateKey);
   const target = effective.find((t) => t.id === id);
   if (target && target._virtual) {
@@ -734,7 +736,7 @@ function initState() {
   // шаблоны должны существовать (могут быть пустыми по умолчанию)
   ensureScheduleTemplates();
 
-  // отдельного seed по датам не делаем — теперь «вид по умолчанию» идёт из шаблона
+  // отдельного seed по датам не делаем — теперь «вид по умолчанию» идёт из шаблона (у нас D+1)
 }
 
 function initNavHandlers() {
