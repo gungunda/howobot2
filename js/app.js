@@ -1,6 +1,6 @@
 // js/app.js
 // Этап 3.1–3.7: роутер, шаблоны, редактор расписания, календарь, UX-полировка
-// Доработка логики: авто-подстановка дефолтного расписания из шаблона дня недели
+// D+1 для вывода задач: показываем шаблон следующего дня
 'use strict';
 
 /* ==============================
@@ -81,7 +81,7 @@ function setActiveNav(viewName) {
 function ensureDay(dateKey) {
   if (!state.days) state.days = {};
   if (!state.days[dateKey]) {
-    state.days[dateKey] = { tasks: [], meta: { note: '' } }; // Day.meta
+    state.days[dateKey] = { tasks: [], meta: { note: '' } };
   } else if (!state.days[dateKey].meta) {
     state.days[dateKey].meta = { note: '' };
   }
@@ -185,12 +185,10 @@ function applyTemplateToDate(weekdayKey, dateKey) {
     minutesPlanned: t.minutesPlanned,
     donePercent: 0,
     isDone: false,
-    sortIndex: idx, // порядок задач в дне
+    sortIndex: idx,
     meta: {
-      source: 'template',
-      templateWeekday: weekdayKey,
-      createdAt: nowISO,
-      updatedAt: nowISO
+      updatedAt: nowISO,
+      lastAction: 'created'
     }
   }));
   saveState(state);
@@ -200,23 +198,17 @@ function applyTemplateToDate(weekdayKey, dateKey) {
    NEW: эффективные задачи дня (D+1)
    ============================== */
 
-/**
- * Возвращает фактический список задач для даты.
- * Если у даты нет своих задач — строит «виртуальные» задачи из шаблона **следующего дня** (D+1).
- * ВАЖНО: «виртуальные» задачи не сохраняются в state, пока пользователь не начнёт их менять.
- */
 function getEffectiveTasks(dateKey) {
   const own = getTasksForDate(dateKey);
   if (Array.isArray(own) && own.length > 0) return own;
 
-  // D+1: берём шаблон ПРИСВОЕННОГО следующего календарного дня
+  // D+1: шаблон следующего календарного дня
   const d = parseDateKey(dateKey);
   const dPlus1 = addDays(d, 1);
   const jsDay = dPlus1.getDay(); // 0..6, 0=Вс
   const map = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
   const weekdayKey = map[jsDay];
 
-  // «виртуальные» id, чтобы чекбоксы в UI были стабильными
   const tpl = getTemplate(weekdayKey);
   return tpl.map((t, idx) => ({
     id: `virt_${weekdayKey}_${idx}`,
@@ -224,8 +216,8 @@ function getEffectiveTasks(dateKey) {
     minutesPlanned: t.minutesPlanned,
     donePercent: 0,
     isDone: false,
-    _virtual: true,          // маркер: это НЕ материализовано в state.days[dateKey]
-    _weekdayKey: weekdayKey  // важно: материализация пойдёт из D+1-шаблона
+    _virtual: true,
+    _weekdayKey: weekdayKey
   }));
 }
 
@@ -248,22 +240,22 @@ function makeDayLabel(dateKey) {
 }
 
 /**
- * Отметка «выполнено».
- * Если пользователь кликнул по «виртуальной» задаче из шаблона —
- * сначала материализуем шаблон в дату, потом повторим действие.
+ * Отметка «выполнено». Для виртуальных задач — материализация и повтор действия.
  */
 function handleToggleTask(id, isDone) {
   const dateKey = state.selectedDate;
   let tasks = getTasksForDate(dateKey);
   const nowISO = new Date().toISOString();
 
-  // Случай A: дата уже материализована — обычная логика
+  // Материализовано — меняем сразу
   if (tasks.length > 0) {
     for (const t of tasks) {
       if (t.id === id) {
         t.isDone = !!isDone;
         t.donePercent = t.isDone ? 100 : 0;
-        if (t.meta && typeof t.meta === 'object') t.meta.updatedAt = nowISO;
+        if (!t.meta || typeof t.meta !== 'object') t.meta = {};
+        t.meta.updatedAt = nowISO;
+        t.meta.lastAction = 'edited';
         break;
       }
     }
@@ -272,26 +264,26 @@ function handleToggleTask(id, isDone) {
     return;
   }
 
-  // Случай B: клик по «виртуальной» задаче из шаблона (теперь — D+1)
+  // Виртуальная — материализуем D+1 и повторяем
   const effective = getEffectiveTasks(dateKey);
   const target = effective.find((t) => t.id === id);
   if (target && target._virtual) {
-    // 1) материализуем именно D+1-шаблон в дату
     applyTemplateToDate(target._weekdayKey, dateKey);
-    // 2) повторим действие уже на реальных задачах
     tasks = getTasksForDate(dateKey);
     const real = tasks.find((t) => t.title === target.title && t.minutesPlanned === target.minutesPlanned);
     if (real) {
       real.isDone = !!isDone;
       real.donePercent = real.isDone ? 100 : 0;
-      if (real.meta && typeof real.meta === 'object') real.meta.updatedAt = nowISO;
+      if (!real.meta || typeof real.meta !== 'object') real.meta = {};
+      real.meta.updatedAt = nowISO;
+      real.meta.lastAction = 'edited';
       saveState(state);
     }
     renderAll();
   }
 }
 
-/** Увеличение/уменьшение прогресса на delta (-10 или +10). */
+/** Изменение прогресса на delta (-10 или +10). */
 function handleBumpPercent(id, delta) {
   const dateKey = state.selectedDate;
   let tasks = getTasksForDate(dateKey);
@@ -299,21 +291,23 @@ function handleBumpPercent(id, delta) {
 
   const clamp = (v) => Math.max(0, Math.min(100, Math.round(v)));
 
-  // Если день уже материализован
+  // Материализовано — правим сразу
   if (tasks.length > 0) {
     const t = tasks.find(x => x.id === id);
     if (t) {
       const next = clamp((t.donePercent ?? 0) + Number(delta || 0));
       t.donePercent = next;
       t.isDone = next >= 100;
-      if (t.meta && typeof t.meta === 'object') t.meta.updatedAt = nowISO;
+      if (!t.meta || typeof t.meta !== 'object') t.meta = {};
+      t.meta.updatedAt = nowISO;
+      t.meta.lastAction = 'edited';
       saveState(state);
       renderAll();
       return;
     }
   }
 
-  // Иначе: работаем с «виртуальной» задачей -> материализуем D+1-шаблон и повторяем
+  // Виртуальная — материализуем D+1 и правим
   const effective = getEffectiveTasks(dateKey);
   const target = effective.find((t) => t.id === id);
   if (target && target._virtual) {
@@ -324,14 +318,19 @@ function handleBumpPercent(id, delta) {
       const next = clamp((real.donePercent ?? 0) + Number(delta || 0));
       real.donePercent = next;
       real.isDone = next >= 100;
-      if (real.meta && typeof real.meta === 'object') real.meta.updatedAt = nowISO;
+      if (!real.meta || typeof real.meta !== 'object') real.meta = {};
+      real.meta.updatedAt = nowISO;
+      real.meta.lastAction = 'edited';
       saveState(state);
     }
     renderAll();
   }
 }
 
-/** Главный рендер: считаем метрики по «эффективным» задачам и рисуем список. */
+/* ==============================
+   Главный рендер
+   ============================== */
+
 function renderAll() {
   const dateKey = state.selectedDate;
   const tasksEff = getEffectiveTasks(dateKey);
@@ -733,10 +732,7 @@ function initState() {
     console.info('[planner] init: selectedDate ->', tomorrowKey);
   }
 
-  // шаблоны должны существовать (могут быть пустыми по умолчанию)
   ensureScheduleTemplates();
-
-  // отдельного seed по датам не делаем — теперь «вид по умолчанию» идёт из шаблона (у нас D+1)
 }
 
 function initNavHandlers() {
