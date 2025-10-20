@@ -178,7 +178,7 @@ function applyTemplateToDate(weekdayKey, dateKey) {
     id: makeId('x'),
     title: t.title,
     minutesPlanned: t.minutesPlanned,
-    minutesDone: 0,
+    donePercent: 0,
     isDone: false
   }));
   saveState(state);
@@ -247,12 +247,7 @@ function handleToggleTask(id, isDone) {
     for (const t of tasks) {
       if (t.id === id) {
         t.isDone = !!isDone;
-        if (t.isDone) {
-          const planned = Number.isFinite(+t.minutesPlanned)
-            ? Math.max(0, Math.floor(+t.minutesPlanned))
-            : 0;
-          t.minutesDone = planned;
-        }
+        t.donePercent = t.isDone ? 100 : 0;
         break;
       }
     }
@@ -272,7 +267,7 @@ function handleToggleTask(id, isDone) {
     const real = tasks.find((t) => t.title === target.title && t.minutesPlanned === target.minutesPlanned);
     if (real) {
       real.isDone = !!isDone;
-      real.minutesDone = real.isDone ? Math.max(0, Math.floor(+real.minutesPlanned || 0)) : 0;
+      real.donePercent = real.isDone ? 100 : 0;
       saveState(state);
     }
     renderAll();

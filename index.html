@@ -1,123 +1,123 @@
 <!doctype html>
 <html lang="ru">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Лёшин планировщик</title>
-    <link rel="stylesheet" href="./assets/styles.css" />
-  </head>
-  <body>
-    <header class="app-header">
-      <h1 class="app-title">Лёшин планировщик</h1>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Лёшин планировщик</title>
+  <link rel="stylesheet" href="./assets/styles.css" />
+</head>
+<body>
 
-      <nav class="app-nav">
-        <button type="button" data-action="today">Сегодня</button>
-        <button type="button" data-action="schedule">Расписание</button>
-        <button type="button" data-action="calendar">Календарь</button>
-      </nav>
-    </header>
+  <!-- Шапка + навигация (классы из styles.css + data-атрибуты для JS) -->
+  <header class="app-header">
+    <h1 class="app-title">Лёшин планировщик</h1>
+  </header>
+  <nav class="app-nav">
+    <button type="button" class="btn" data-action="today">Сегодня</button>
+    <button type="button" class="btn" data-action="schedule">Расписание</button>
+    <button type="button" class="btn" data-action="calendar">Календарь</button>
+  </nav>
 
-    <main class="app-main">
-      <!-- ===== Dashboard (дашборд дня) ===== -->
-      <section class="view" data-view="dashboard">
-        <section class="day-header">
-          <h2 class="day-title" data-day-label>—</h2>
-        </section>
+  <main class="app-main">
+    <!-- ===== Дашборд ===== -->
+    <section class="view" data-view="dashboard">
+      <!-- Статы: классы .stats/.stat для стилей + data-stat для ui.js -->
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-label">Общая нагрузка</span>
+          <strong class="stat-value" data-stat="planned">0 мин</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Выполнено</span>
+          <strong class="stat-value" data-stat="done">0 мин (0%)</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Осталось</span>
+          <strong class="stat-value" data-stat="left">0 мин</strong>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Финиш-оценка</span>
+          <strong class="stat-value" data-stat="eta">—</strong>
+        </div>
+      </div>
 
-        <section class="stats">
-          <div class="stat">
-            <div class="stat-label">Общая нагрузка</div>
-            <div class="stat-value" data-stat="planned">0 мин</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Выполнено</div>
-            <div class="stat-value" data-stat="done">0 мин (0%)</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Осталось</div>
-            <div class="stat-value" data-stat="left">0 мин</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Финиш-оценка</div>
-            <div class="stat-value" data-stat="eta">—</div>
-          </div>
-        </section>
+      <!-- Подпись дня -->
+      <h2 class="day-label__title" data-day-label>—</h2>
 
-        <section class="tasks">
-          <div class="tasks-empty" data-empty style="display:none;">
-            Нет заданий на этот день.
-          </div>
-          <div class="tasks-list" data-tasks></div>
-        </section>
-      </section>
+      <!-- Список задач: класс для стилей + data для ui.js -->
+      <div class="task-list" data-tasks></div>
+      <div class="empty" data-empty style="display:none">Нет заданий на этот день.</div>
+    </section>
 
-      <!-- ===== Schedule (редактор шаблонов) ===== -->
-      <section class="view" data-view="schedule" hidden>
-        <h2>Редактор расписания (шаблоны Пн–Вс)</h2>
+    <!-- ===== Редактор расписания ===== -->
+    <section class="view" data-view="schedule" hidden>
+      <h2>Редактор расписания (шаблоны Пн–Вс)</h2>
 
-        <div class="weekday-switch">
-          <button type="button" data-weekday="mon">Пн</button>
-          <button type="button" data-weekday="tue">Вт</button>
-          <button type="button" data-weekday="wed">Ср</button>
-          <button type="button" data-weekday="thu">Чт</button>
-          <button type="button" data-weekday="fri">Пт</button>
-          <button type="button" data-weekday="sat">Сб</button>
-          <button type="button" data-weekday="sun">Вс</button>
+      <!-- Переключатель дней недели -->
+      <div class="weekday-switch">
+        <button type="button" class="btn" data-weekday="mon">Пн</button>
+        <button type="button" class="btn" data-weekday="tue">Вт</button>
+        <button type="button" class="btn" data-weekday="wed">Ср</button>
+        <button type="button" class="btn" data-weekday="thu">Чт</button>
+        <button type="button" class="btn" data-weekday="fri">Пт</button>
+        <button type="button" class="btn" data-weekday="sat">Сб</button>
+        <button type="button" class="btn" data-weekday="sun">Вс</button>
+      </div>
+
+      <!-- Шапка редактора (для сетки .schedule-header, по желанию) -->
+      <div class="schedule-header">
+        <div>Задание</div>
+        <div>Мин</div>
+        <div>Действия</div>
+      </div>
+
+      <!-- Список строк расписания -->
+      <div class="schedule-list" data-schedule-list></div>
+
+      <!-- Футер редактора -->
+      <div class="schedule-footer">
+        <div class="schedule-summary">
+          Строк: <b data-sched-count>0</b>,
+          Сумма: <b data-sched-total>0</b> мин
+        </div>
+        <div class="schedule-controls">
+          <button type="button" class="btn" data-schedule-add>Добавить строку</button>
+          <button type="button" class="btn" data-apply-template>Применить этот шаблон к выбранной дате</button>
+          <button type="button" class="btn primary" data-schedule-save>Сохранить шаблон</button>
+        </div>
+      </div>
+
+      <div class="schedule-errors" data-schedule-errors style="display:none"></div>
+    </section>
+
+    <!-- ===== Календарь ===== -->
+    <section class="view" data-view="calendar" hidden>
+      <h2 class="day-title">Календарь</h2>
+
+      <div class="calendar">
+        <div class="calendar-header">
+          <button type="button" class="btn" data-cal-prev>←</button>
+          <div class="calendar-label" data-cal-label>—</div>
+          <button type="button" class="btn" data-cal-next>→</button>
         </div>
 
-        <div class="schedule-editor card">
-          <div class="schedule-header">
-            <div class="col-title">Задание</div>
-            <div class="col-minutes">Мин</div>
-            <div class="col-actions">Действия</div>
-          </div>
-
-          <div class="schedule-list" data-schedule-list></div>
-
-          <div class="schedule-controls">
-            <button type="button" class="btn" data-schedule-add>Добавить строку</button>
-            <button type="button" class="btn" data-apply-template>Применить этот шаблон к выбранной дате</button>
-            <button type="button" class="btn primary" data-schedule-save>Сохранить шаблон</button>
-          </div>
-
-          <p class="muted small">
-            Подсказка: название — текст задания; «Мин» — длительность в минутах (целое число ≥ 0).
-          </p>
+        <!-- Дни недели (опционально, под стили) -->
+        <div class="calendar-weekdays">
+          <div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div>
         </div>
-      </section>
 
-      <!-- ===== Calendar (выбор даты) ===== -->
-      <section class="view" data-view="calendar" hidden>
-        <h2>Календарь</h2>
+        <!-- Сетка календаря -->
+        <div class="calendar-grid" data-cal-grid></div>
 
-        <div class="calendar card">
-          <div class="calendar-header">
-            <button type="button" class="btn" data-cal-prev>&larr;</button>
-            <div class="calendar-label" data-cal-label>—</div>
-            <button type="button" class="btn" data-cal-next>&rarr;</button>
-          </div>
+        <div class="calendar-footer muted small">Клик по дню — открыть эту дату на дашборде.</div>
+      </div>
+    </section>
+  </main>
 
-          <div class="calendar-weekdays">
-            <div>Пн</div>
-            <div>Вт</div>
-            <div>Ср</div>
-            <div>Чт</div>
-            <div>Пт</div>
-            <div class="muted">Сб</div>
-            <div class="muted">Вс</div>
-          </div>
+  <!-- Toast -->
+  <div class="toast" data-toast style="display:none"></div>
 
-          <div class="calendar-grid" data-cal-grid>
-            <!-- сюда рендерятся ячейки дней -->
-          </div>
-
-          <div class="calendar-footer muted small">
-            Клик по дню — открыть эту дату на дашборде.
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <script type="module" src="./js/app.js"></script>
-  </body>
+  <!-- Скрипт приложения (ESM) -->
+  <script type="module" src="./js/app.js"></script>
+</body>
 </html>
