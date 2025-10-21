@@ -1,5 +1,6 @@
 // js/app.js
-// SPA-роутинг, состояние, бизнес-логика. DOM-рендер календаря и редактора вынесены в ui.js
+// Контроллер/оркестратор: state, роутинг, бизнес-логика.
+// Этап 4: правка/удаление задач. D+1 логика сохранена.
 'use strict';
 
 /* ==============================
@@ -16,6 +17,7 @@ import { renderStats, renderTasks, scheduleUI, calendarUI } from './ui.js';
    ============================== */
 
 const STATE_STORAGE_KEY = 'planner.state.v1';
+const DEVICE_STORAGE_KEY = 'planner.deviceId';
 const VIEWS = ['dashboard', 'schedule', 'calendar'];
 
 const btnToday = document.querySelector('[data-action="today"]');
@@ -39,7 +41,7 @@ let calYear  = null;
 let calMonth = null;
 
 /* ==============================
-   Вспомогательное UI
+   Helpers (UI)
    ============================== */
 
 function showToast(message = '', ms = 1800) {
@@ -59,13 +61,36 @@ function setActiveNav(viewName) {
 }
 
 /* ==============================
+   DeviceId (для meta.deviceId)
+   ============================== */
+
+function makeId(prefix = 't') {
+  const rnd = Math.floor(Math.random() * 1e6);
+  return `${prefix}_${Date.now().toString(36)}_${rnd.toString(36)}`;
+}
+
+function getDeviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_STORAGE_KEY);
+    if (!id) {
+      id = makeId('dev');
+      localStorage.setItem(DEVICE_STORAGE_KEY, id);
+    }
+    return id;
+  } catch {
+    // fallback без localStorage
+    return 'dev_fallback';
+  }
+}
+
+/* ==============================
    Данные дня
    ============================== */
 
 function ensureDay(dateKey) {
   if (!state.days) state.days = {};
   if (!state.days[dateKey]) {
-    state.days[dateKey] = { tasks: [], meta: { note: '' } }; // Day.meta
+    state.days[dateKey] = { tasks: [], meta: { note: '' } }; // Day.meta (задел под заметку)
   } else if (!state.days[dateKey].meta) {
     state.days[dateKey].meta = { note: '' };
   }
@@ -158,11 +183,12 @@ function setTemplate(weekdayKey, tasks) {
   saveState(state);
 }
 
-/** Применяет шаблон (копией) в конкретную дату — «материализует» задачи. */
+/** Применяет шаблон (копией) в конкретную дату — «материализует» задачи (D+1 используется в getEffectiveTasks). */
 function applyTemplateToDate(weekdayKey, dateKey) {
   ensureDay(dateKey);
   const tpl = getTemplate(weekdayKey);
   const nowISO = new Date().toISOString();
+  const deviceId = getDeviceId();
   state.days[dateKey].tasks = tpl.map((t, idx) => ({
     id: makeId('x'),
     title: t.title,
@@ -172,7 +198,8 @@ function applyTemplateToDate(weekdayKey, dateKey) {
     sortIndex: idx,
     meta: {
       updatedAt: nowISO,
-      lastAction: 'created'
+      userAction: 'created',
+      deviceId
     }
   }));
   saveState(state);
@@ -206,15 +233,6 @@ function getEffectiveTasks(dateKey) {
 }
 
 /* ==============================
-   Seed для демо
-   ============================== */
-
-function makeId(prefix = 't') {
-  const rnd = Math.floor(Math.random() * 1e6);
-  return `${prefix}_${Date.now().toString(36)}_${rnd.toString(36)}`;
-}
-
-/* ==============================
    Дашборд
    ============================== */
 
@@ -227,6 +245,7 @@ function handleToggleTask(id, isDone) {
   const dateKey = state.selectedDate;
   let tasks = getTasksForDate(dateKey);
   const nowISO = new Date().toISOString();
+  const deviceId = getDeviceId();
 
   // Материализовано — меняем сразу
   if (tasks.length > 0) {
@@ -236,7 +255,8 @@ function handleToggleTask(id, isDone) {
         t.donePercent = t.isDone ? 100 : 0;
         if (!t.meta || typeof t.meta !== 'object') t.meta = {};
         t.meta.updatedAt = nowISO;
-        t.meta.lastAction = 'edited';
+        t.meta.userAction = 'edited';
+        t.meta.deviceId = deviceId;
         break;
       }
     }
@@ -257,7 +277,8 @@ function handleToggleTask(id, isDone) {
       real.donePercent = real.isDone ? 100 : 0;
       if (!real.meta || typeof real.meta !== 'object') real.meta = {};
       real.meta.updatedAt = nowISO;
-      real.meta.lastAction = 'edited';
+      real.meta.userAction = 'edited';
+      real.meta.deviceId = deviceId;
       saveState(state);
     }
     renderAll();
@@ -268,6 +289,7 @@ function handleBumpPercent(id, delta) {
   const dateKey = state.selectedDate;
   let tasks = getTasksForDate(dateKey);
   const nowISO = new Date().toISOString();
+  const deviceId = getDeviceId();
 
   const clamp = (v) => Math.max(0, Math.min(100, Math.round(v)));
 
@@ -280,7 +302,8 @@ function handleBumpPercent(id, delta) {
       t.isDone = next >= 100;
       if (!t.meta || typeof t.meta !== 'object') t.meta = {};
       t.meta.updatedAt = nowISO;
-      t.meta.lastAction = 'edited';
+      t.meta.userAction = 'edited';
+      t.meta.deviceId = deviceId;
       saveState(state);
       renderAll();
       return;
@@ -300,7 +323,8 @@ function handleBumpPercent(id, delta) {
       real.isDone = next >= 100;
       if (!real.meta || typeof real.meta !== 'object') real.meta = {};
       real.meta.updatedAt = nowISO;
-      real.meta.lastAction = 'edited';
+      real.meta.userAction = 'edited';
+      real.meta.deviceId = deviceId;
       saveState(state);
     }
     renderAll();
@@ -316,19 +340,111 @@ function renderAll() {
   renderStats(totals, eta);
   renderTasks(
     tasksEff,
-    { onToggle: handleToggleTask, onBump: handleBumpPercent },
+    {
+      onToggle: handleToggleTask,
+      onBump: handleBumpPercent,
+      onEditStart: handleEditStart,
+      onEditSave: handleEditSave,
+      onEditCancel: () => renderAll(),
+      onDelete: handleDeleteTask
+    },
     makeDayLabel(dateKey)
   );
 }
 
 /* ==============================
-   Редактор расписания — оркестрация (DOM в ui.scheduleUI)
+   Этап 4 — Правка/удаление
    ============================== */
 
-function highlightActiveWeekday() {
-  // Делегируем активное состояние в ui (переключатели подсвечиваются там),
-  // но оставим совместимость на случай кастомных стилей (ничего не делаем тут).
+/** Начало редактирования: если день виртуальный — материализуем D+1, затем перерисовываем. */
+function handleEditStart(id) {
+  const dateKey = state.selectedDate;
+  const tasks = getTasksForDate(dateKey);
+
+  if (tasks.length > 0) {
+    // уже материализовано — просто перерисуем в режиме редактирования
+    renderAll();
+    return;
+  }
+  // материализуем D+1, чтобы был объект задачи с реальным id
+  const effective = getEffectiveTasks(dateKey);
+  const target = effective.find((t) => t.id === id);
+  if (target && target._virtual) {
+    applyTemplateToDate(target._weekdayKey, dateKey);
+    saveState(state);
+    renderAll();
+  }
 }
+
+/** Сохранение правок: title, minutesPlanned */
+function handleEditSave(id, payload) {
+  const { title, minutesPlanned } = payload || {};
+  const dateKey = state.selectedDate;
+  let tasks = getTasksForDate(dateKey);
+  const nowISO = new Date().toISOString();
+  const deviceId = getDeviceId();
+
+  if (tasks.length === 0) {
+    // если всё ещё виртуально — материализуем D+1
+    const eff = getEffectiveTasks(dateKey);
+    const t = eff.find((x) => x.id === id);
+    if (t && t._virtual) {
+      applyTemplateToDate(t._weekdayKey, dateKey);
+      tasks = getTasksForDate(dateKey);
+    }
+  }
+
+  const real = tasks.find((t) => t.id === id);
+  if (real) {
+    real.title = String(title ?? '').trim();
+    real.minutesPlanned = Math.max(0, Math.floor(Number(minutesPlanned ?? 0)));
+    if (!real.meta || typeof real.meta !== 'object') real.meta = {};
+    real.meta.updatedAt = nowISO;
+    real.meta.userAction = 'edited';
+    real.meta.deviceId = deviceId;
+    saveState(state);
+  }
+  renderAll();
+}
+
+/** Удаление задачи. Если после удаления список пуст — удаляем весь день из state.days */
+function handleDeleteTask(id) {
+  const dateKey = state.selectedDate;
+  let tasks = getTasksForDate(dateKey);
+  const deviceId = getDeviceId();
+
+  if (tasks.length === 0) {
+    // материализуем D+1, чтобы появилась коллекция для удаления
+    const eff = getEffectiveTasks(dateKey);
+    const t = eff.find((x) => x.id === id);
+    if (t && t._virtual) {
+      applyTemplateToDate(t._weekdayKey, dateKey);
+      tasks = getTasksForDate(dateKey);
+    }
+  }
+
+  const idx = tasks.findIndex((t) => t.id === id);
+  if (idx !== -1) {
+    // при желании можно было бы логировать факт удаления где-то отдельно;
+    // но по ТЗ просто удаляем из дня
+    // проставим мету перед удалением (не сохранится вместе с задачей, но порядок действий корректен)
+    const nowISO = new Date().toISOString();
+    tasks[idx].meta = { ...(tasks[idx].meta || {}), updatedAt: nowISO, userAction: 'deleted', deviceId };
+
+    tasks.splice(idx, 1);
+
+    // если список пуст — удаляем ключ дня полностью
+    if (tasks.length === 0) {
+      delete state.days[dateKey];
+    }
+    saveState(state);
+  }
+  renderAll();
+}
+
+/* ==============================
+   Редактор расписания — оркестрация (DOM в ui.scheduleUI)
+   ============================== */
 
 function validateRow(row) {
   const [inputTitle, inputMinutes] = row.querySelectorAll('input');
@@ -339,7 +455,6 @@ function validateRow(row) {
   if (!title) errs.push('пустое название');
   if (!Number.isFinite(minutes) || minutes < 0) errs.push('минуты некорректны');
 
-  // локальная подсветка (чтобы не тянуть ui внутрь валидации)
   if (inputTitle) inputTitle.classList.toggle('invalid', !title);
   if (inputMinutes) inputMinutes.classList.toggle('invalid', !Number.isFinite(minutes) || minutes < 0);
 
@@ -378,7 +493,6 @@ function renderScheduleEditor() {
 
   ensureScheduleTemplates();
 
-  // 1) биндим хедер/кнопки (idempotent внутри ui)
   scheduleUI.bindHeader({
     onWeekdayPick: (wd) => {
       scheduleCurrentWeekday = wd;
@@ -435,7 +549,6 @@ function renderScheduleEditor() {
     }
   });
 
-  // 2) первичный рендер строк текущего дня недели
   const rows = getTemplate(scheduleCurrentWeekday);
   scheduleUI.renderRows(rows);
   scheduleUI.updateSummary();

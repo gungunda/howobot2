@@ -1,5 +1,6 @@
 // js/ui.js
-// Презентационный слой: чистый DOM для дашборда, календаря и редактора расписания.
+// Презентационный слой: DOM для дашборда, календаря и редактора расписания.
+// Этап 4: добавлены кнопки "Править"/"Удалить" и inline-форма редактирования.
 'use strict';
 
 /* ==============================
@@ -41,6 +42,11 @@ export function renderStats(totals, eta) {
   `;
 }
 
+/**
+ * renderTasks
+ * tasks: { id, title, minutesPlanned, donePercent, isDone, _virtual? }[]
+ * handlers: { onToggle, onBump, onEditStart, onEditSave, onEditCancel, onDelete }
+ */
 export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
   const dashboard = document.querySelector('[data-view="dashboard"]');
   if (!dashboard) {
@@ -65,23 +71,7 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
     return;
   }
 
-  const items = (tasks || []).map(t => {
-    const dp = clampPercent(t.donePercent);
-    const checked = (t.isDone || dp >= 100) ? 'checked' : '';
-    const badge = t._virtual ? '<span class="badge">из шаблона</span>' : '';
-    return `
-      <div class="task-item ${checked ? 'done' : ''}" data-id="${esc(t.id)}">
-        <input class="task-checkbox" type="checkbox" data-act="toggle" ${checked}/>
-        <div class="task-title">${esc(t.title)} ${badge}</div>
-        <div class="task-minutes">${t.minutesPlanned} мин · ${dp}%</div>
-        <div class="task-controls">
-          <button type="button" class="btn" data-act="bump" data-delta="-10">−10%</button>
-          <button type="button" class="btn" data-act="bump" data-delta="+10">+10%</button>
-        </div>
-      </div>
-    `;
-  });
-
+  const items = (tasks || []).map(t => taskItemHTML(t));
   const empty =
     dashboard.querySelector('[data-empty]') ||
     dashboard.querySelector('.empty');
@@ -97,29 +87,119 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
     list.innerHTML = items.join('');
   }
 
-  // чекбоксы (делегирование)
+  // Делегирование событий:
   list.onchange = (e) => {
     const el = e.target;
     if (!(el instanceof HTMLInputElement)) return;
-    if (el.getAttribute('data-act') !== 'toggle') return;
+    const act = el.getAttribute('data-act');
     const row = el.closest('.task-item');
     const id = row?.getAttribute('data-id');
     if (!id) return;
-    handlers.onToggle?.(id, el.checked);
+
+    if (act === 'toggle') {
+      handlers.onToggle?.(id, el.checked);
+    }
   };
 
-  // кнопки ±10%
   list.onclick = (e) => {
     const el = e.target;
     if (!(el instanceof HTMLElement)) return;
-    if (el.getAttribute('data-act') !== 'bump') return;
+    const act = el.getAttribute('data-act');
+    if (!act) return;
     const row = el.closest('.task-item');
     const id = row?.getAttribute('data-id');
     if (!id) return;
-    const delta = Number((el.getAttribute('data-delta') || '0').replace('%',''));
-    if (!Number.isFinite(delta)) return;
-    handlers.onBump?.(id, delta);
+
+    if (act === 'bump') {
+      const delta = Number((el.getAttribute('data-delta') || '0').replace('%',''));
+      if (!Number.isFinite(delta)) return;
+      handlers.onBump?.(id, delta);
+      return;
+    }
+
+    if (act === 'edit') {
+      // Включаем inline-редактирование (DOM-уровень)
+      startInlineEdit(row);
+      handlers.onEditStart?.(id);
+      return;
+    }
+
+    if (act === 'delete') {
+      handlers.onDelete?.(id);
+      return;
+    }
+
+    if (act === 'save-edit') {
+      const { title, minutes } = grabInlineValues(row);
+      if (title.trim() === '' || minutes < 0) {
+        // простая валидация на UI
+        const titleInput = row.querySelector('[data-edit-title]');
+        const minInput = row.querySelector('[data-edit-minutes]');
+        if (titleInput) titleInput.classList.toggle('invalid', title.trim() === '');
+        if (minInput) minInput.classList.toggle('invalid', !(Number.isFinite(minutes) && minutes >= 0));
+        return;
+      }
+      handlers.onEditSave?.(id, { title, minutesPlanned: minutes });
+      return;
+    }
+
+    if (act === 'cancel-edit') {
+      handlers.onEditCancel?.(id);
+      return;
+    }
   };
+}
+
+/* ===== helpers: карточка, inline-форма ===== */
+
+function taskItemHTML(t) {
+  const dp = clampPercent(t.donePercent);
+  const checked = (t.isDone || dp >= 100) ? 'checked' : '';
+  const badge = t._virtual ? '<span class="badge">из шаблона</span>' : '';
+  return `
+    <div class="task-item ${checked ? 'done' : ''}" data-id="${esc(t.id)}">
+      <input class="task-checkbox" type="checkbox" data-act="toggle" ${checked}/>
+      <div class="task-title">${esc(t.title)} ${badge}</div>
+      <div class="task-minutes">${t.minutesPlanned} мин · ${dp}%</div>
+      <div class="task-controls">
+        <button type="button" class="btn" data-act="bump" data-delta="-10">−10%</button>
+        <button type="button" class="btn" data-act="bump" data-delta="+10">+10%</button>
+        <button type="button" class="btn" data-act="edit">✏️ Править</button>
+        <button type="button" class="btn danger" data-act="delete">🗑️ Удалить</button>
+      </div>
+    </div>
+  `;
+}
+
+function startInlineEdit(rowEl) {
+  if (!rowEl) return;
+  const title = rowEl.querySelector('.task-title')?.textContent?.replace(' из шаблона','').trim() || '';
+  const minText = rowEl.querySelector('.task-minutes')?.textContent || '';
+  const minutes = parseInt((minText.match(/(\d+)\s*мин/) || [0,0])[1], 10) || 0;
+
+  rowEl.classList.add('editing');
+  rowEl.innerHTML = `
+    <div class="task-edit">
+      <label>
+        <span>Название</span>
+        <input type="text" data-edit-title value="${escAttr(title)}" />
+      </label>
+      <label>
+        <span>Минуты</span>
+        <input type="number" min="0" step="1" data-edit-minutes value="${minutes}" />
+      </label>
+      <div class="task-controls">
+        <button type="button" class="btn primary" data-act="save-edit">Сохранить</button>
+        <button type="button" class="btn" data-act="cancel-edit">Отменить</button>
+      </div>
+    </div>
+  `;
+}
+
+function grabInlineValues(rowEl) {
+  const title = String(rowEl.querySelector('[data-edit-title]')?.value ?? '');
+  const minutes = Math.max(0, Math.floor(Number(rowEl.querySelector('[data-edit-minutes]')?.value ?? 0)));
+  return { title, minutes };
 }
 
 /* ==============================
@@ -278,6 +358,8 @@ function updateScheduleSummary() {
     }
   }
 
+  const elSchedCount = document.querySelector('[data-sched-count]');
+  const elSchedTotal = document.querySelector('[data-sched-total]');
   if (elSchedCount) elSchedCount.textContent = `${count} строк`;
   if (elSchedTotal) elSchedTotal.textContent = `${total} мин`;
 }
@@ -402,8 +484,11 @@ function esc(s) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;')
     .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+function escAttr(s) {
+  return esc(s).replace(/"/g, '&quot;');
+}
 
-// Локальные аналоги date/toDateKey, чтобы не создавать циклических импортов
+// Локальные аналоги date/toDateKey (чтобы не плодить импортов)
 function addDaysLocal(date, days) {
   const d = new Date(date);
   d.setDate(d.getDate() + Number(days || 0));
