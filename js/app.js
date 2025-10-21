@@ -1,6 +1,5 @@
 // js/app.js
-// Этап 3.1–3.7: роутер, шаблоны, редактор расписания, календарь, UX-полировка
-// D+1 для вывода задач: показываем шаблон следующего дня
+// SPA-роутинг, состояние, бизнес-логика. DOM-рендер календаря и редактора вынесены в ui.js
 'use strict';
 
 /* ==============================
@@ -10,7 +9,7 @@
 import { loadState, saveState } from './storage.js';
 import { toDateKey, parseDateKey, getToday, getTomorrow, addDays } from './date.js';
 import { computeTotals, etaFromNow } from './compute.js';
-import { renderStats, renderTasks } from './ui.js';
+import { renderStats, renderTasks, scheduleUI, calendarUI } from './ui.js';
 
 /* ==============================
    Константы и селекторы
@@ -26,21 +25,6 @@ const btnCalendar = document.querySelector('[data-action="calendar"]');
 const viewDashboard = document.querySelector('[data-view="dashboard"]');
 const viewSchedule  = document.querySelector('[data-view="schedule"]');
 const viewCalendar  = document.querySelector('[data-view="calendar"]');
-
-// Schedule UI
-const weekdaySwitch = document.querySelector('.weekday-switch');
-const scheduleListEl = document.querySelector('[data-schedule-list]');
-const btnAddRow = document.querySelector('[data-schedule-add]');
-const btnSaveTpl = document.querySelector('[data-schedule-save]');
-const btnApplyTemplate = document.querySelector('[data-apply-template]');
-const elSchedCount = document.querySelector('[data-sched-count]');
-const elSchedTotal = document.querySelector('[data-sched-total]');
-
-// Calendar UI
-const calPrevBtn  = document.querySelector('[data-cal-prev]');
-const calNextBtn  = document.querySelector('[data-cal-next]');
-const calLabelEl  = document.querySelector('[data-cal-label]');
-const calGridEl   = document.querySelector('[data-cal-grid]');
 
 // Toast
 const toastEl = document.querySelector('[data-toast]');
@@ -81,7 +65,7 @@ function setActiveNav(viewName) {
 function ensureDay(dateKey) {
   if (!state.days) state.days = {};
   if (!state.days[dateKey]) {
-    state.days[dateKey] = { tasks: [], meta: { note: '' } };
+    state.days[dateKey] = { tasks: [], meta: { note: '' } }; // Day.meta
   } else if (!state.days[dateKey].meta) {
     state.days[dateKey].meta = { note: '' };
   }
@@ -195,7 +179,7 @@ function applyTemplateToDate(weekdayKey, dateKey) {
 }
 
 /* ==============================
-   NEW: эффективные задачи дня (D+1)
+   Эффективные задачи дня (D+1)
    ============================== */
 
 function getEffectiveTasks(dateKey) {
@@ -222,7 +206,7 @@ function getEffectiveTasks(dateKey) {
 }
 
 /* ==============================
-   Seed для демо (не влияет на шаблоны)
+   Seed для демо
    ============================== */
 
 function makeId(prefix = 't') {
@@ -231,7 +215,7 @@ function makeId(prefix = 't') {
 }
 
 /* ==============================
-   Рендер дашборда
+   Дашборд
    ============================== */
 
 function makeDayLabel(dateKey) {
@@ -239,9 +223,6 @@ function makeDayLabel(dateKey) {
   return d.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-/**
- * Отметка «выполнено». Для виртуальных задач — материализация и повтор действия.
- */
 function handleToggleTask(id, isDone) {
   const dateKey = state.selectedDate;
   let tasks = getTasksForDate(dateKey);
@@ -283,7 +264,6 @@ function handleToggleTask(id, isDone) {
   }
 }
 
-/** Изменение прогресса на delta (-10 или +10). */
 function handleBumpPercent(id, delta) {
   const dateKey = state.selectedDate;
   let tasks = getTasksForDate(dateKey);
@@ -327,10 +307,6 @@ function handleBumpPercent(id, delta) {
   }
 }
 
-/* ==============================
-   Главный рендер
-   ============================== */
-
 function renderAll() {
   const dateKey = state.selectedDate;
   const tasksEff = getEffectiveTasks(dateKey);
@@ -346,97 +322,12 @@ function renderAll() {
 }
 
 /* ==============================
-   3.3–3.7 — редактор расписания (без изменений по сути)
+   Редактор расписания — оркестрация (DOM в ui.scheduleUI)
    ============================== */
 
-function ensureErrorBanner() {
-  if (!viewSchedule) return null;
-  let banner = viewSchedule.querySelector('[data-schedule-errors]');
-  if (!banner) {
-    banner = document.createElement('div');
-    banner.dataset.scheduleErrors = '';
-    banner.className = 'schedule-errors muted small';
-    banner.style.display = 'none';
-    viewSchedule.appendChild(banner);
-  }
-  return banner;
-}
-
-function showErrors(messages = []) {
-  const banner = ensureErrorBanner();
-  if (!banner) return;
-  const has = messages.length > 0;
-  banner.style.display = has ? 'block' : 'none';
-  banner.textContent = has ? messages.join(' · ') : '';
-}
-
-function markInvalid(input, invalid) {
-  if (!input) return;
-  input.classList.toggle('invalid', !!invalid);
-}
-
-function bindMinutesSanitizer(inputNumber) {
-  if (!inputNumber || inputNumber.dataset.sanitizerBound) return;
-  inputNumber.addEventListener('input', () => {
-    inputNumber.value = String(inputNumber.value).replace(/[^\d]/g, '');
-  });
-  inputNumber.addEventListener('blur', () => {
-    const n = Math.max(0, Math.floor(Number(inputNumber.value || 0)));
-    inputNumber.value = String(n);
-  });
-  inputNumber.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && btnAddRow) {
-      e.preventDefault();
-      btnAddRow.click();
-    }
-  });
-  inputNumber.dataset.sanitizerBound = '1';
-}
-
-function renderScheduleRows(weekday) {
-  if (!scheduleListEl) return;
-  scheduleListEl.innerHTML = '';
-
-  const tpl = getTemplate(weekday);
-  if (tpl.length === 0) tpl.push({ title: '', minutesPlanned: 0 });
-
-  for (let i = 0; i < tpl.length; i++) {
-    const row = document.createElement('div');
-    row.className = 'schedule-row';
-    row.dataset.index = String(i);
-
-    const inputTitle = document.createElement('input');
-    inputTitle.type = 'text';
-    inputTitle.placeholder = 'Название задания';
-    inputTitle.value = tpl[i].title;
-
-    const inputMinutes = document.createElement('input');
-    inputMinutes.type = 'number';
-    inputMinutes.min = '0';
-    inputMinutes.step = '1';
-    inputMinutes.placeholder = '0';
-    inputMinutes.value = String(tpl[i].minutesPlanned);
-    bindMinutesSanitizer(inputMinutes);
-
-    const actions = document.createElement('div');
-    actions.className = 'row-actions';
-
-    const btnDel = document.createElement('button');
-    btnDel.type = 'button';
-    btnDel.className = 'btn';
-    btnDel.textContent = 'Удалить';
-    btnDel.addEventListener('click', () => {
-      row.remove();
-      updateScheduleSummary();
-    });
-
-    actions.appendChild(btnDel);
-    row.append(inputTitle, inputMinutes, actions);
-    scheduleListEl.appendChild(row);
-  }
-
-  showErrors([]);
-  updateScheduleSummary();
+function highlightActiveWeekday() {
+  // Делегируем активное состояние в ui (переключатели подсвечиваются там),
+  // но оставим совместимость на случай кастомных стилей (ничего не делаем тут).
 }
 
 function validateRow(row) {
@@ -448,13 +339,15 @@ function validateRow(row) {
   if (!title) errs.push('пустое название');
   if (!Number.isFinite(minutes) || minutes < 0) errs.push('минуты некорректны');
 
-  markInvalid(inputTitle, !title);
-  markInvalid(inputMinutes, !Number.isFinite(minutes) || minutes < 0);
+  // локальная подсветка (чтобы не тянуть ui внутрь валидации)
+  if (inputTitle) inputTitle.classList.toggle('invalid', !title);
+  if (inputMinutes) inputMinutes.classList.toggle('invalid', !Number.isFinite(minutes) || minutes < 0);
 
   return { ok: errs.length === 0, title, minutes, errors: errs };
 }
 
 function collectAndValidateTemplate() {
+  const scheduleListEl = document.querySelector('[data-schedule-list]');
   const rows = Array.from(scheduleListEl?.querySelectorAll('.schedule-row') || []);
   const validTasks = [];
   const messages = [];
@@ -480,117 +373,43 @@ function collectAndValidateTemplate() {
   return { validTasks, messages };
 }
 
-function updateScheduleSummary() {
-  const rows = Array.from(scheduleListEl?.querySelectorAll('.schedule-row') || []);
-  let count = 0;
-  let total = 0;
-
-  for (const r of rows) {
-    const [inputTitle, inputMinutes] = r.querySelectorAll('input');
-    const title = String(inputTitle?.value ?? '').trim();
-    const minutes = Math.max(0, Math.floor(Number(inputMinutes?.value ?? 0)));
-    if (title || minutes > 0) {
-      count += 1;
-      total += minutes;
-    }
-  }
-
-  if (elSchedCount) elSchedCount.textContent = `${count} строк`;
-  if (elSchedTotal) elSchedTotal.textContent = `${total} мин`;
-}
-
-function highlightActiveWeekday() {
-  if (!weekdaySwitch) return;
-  const buttons = weekdaySwitch.querySelectorAll('button[data-weekday]');
-  buttons.forEach((b) => {
-    b.classList.toggle('active', b.dataset.weekday === scheduleCurrentWeekday);
-  });
-}
-
 function renderScheduleEditor() {
   if (!viewSchedule) return;
 
   ensureScheduleTemplates();
-  highlightActiveWeekday();
-  renderScheduleRows(scheduleCurrentWeekday);
 
-  if (weekdaySwitch && !weekdaySwitch.dataset.bound) {
-    weekdaySwitch.addEventListener('click', (ev) => {
-      const target = ev.target;
-      if (target && target.matches('button[data-weekday]')) {
-        scheduleCurrentWeekday = target.dataset.weekday;
-        highlightActiveWeekday();
-        renderScheduleRows(scheduleCurrentWeekday);
-      }
-    });
-    weekdaySwitch.dataset.bound = '1';
-  }
-
-  if (btnAddRow && !btnAddRow.dataset.bound) {
-    btnAddRow.addEventListener('click', () => {
-      const row = document.createElement('div');
-      row.className = 'schedule-row';
-
-      const inputTitle = document.createElement('input');
-      inputTitle.type = 'text';
-      inputTitle.placeholder = 'Название задания';
-
-      const inputMinutes = document.createElement('input');
-      inputMinutes.type = 'number';
-      inputMinutes.min = '0';
-      inputMinutes.step = '1';
-      inputMinutes.placeholder = '0';
-      bindMinutesSanitizer(inputMinutes);
-
-      const actions = document.createElement('div');
-      actions.className = 'row-actions';
-
-      const btnDel = document.createElement('button');
-      btnDel.type = 'button';
-      btnDel.className = 'btn';
-      btnDel.textContent = 'Удалить';
-      btnDel.addEventListener('click', () => {
-        row.remove();
-        updateScheduleSummary();
-      });
-
-      actions.appendChild(btnDel);
-      row.append(inputTitle, inputMinutes, actions);
-      scheduleListEl.appendChild(row);
-
-      inputTitle.focus();
-      showErrors([]);
-      updateScheduleSummary();
-    });
-    btnAddRow.dataset.bound = '1';
-  }
-
-  if (btnSaveTpl && !btnSaveTpl.dataset.bound) {
-    btnSaveTpl.addEventListener('click', () => {
+  // 1) биндим хедер/кнопки (idempotent внутри ui)
+  scheduleUI.bindHeader({
+    onWeekdayPick: (wd) => {
+      scheduleCurrentWeekday = wd;
+      const rows = getTemplate(scheduleCurrentWeekday);
+      scheduleUI.renderRows(rows);
+      scheduleUI.updateSummary();
+      scheduleUI.showErrors([]);
+    },
+    onAddRow: () => {
+      scheduleUI.addEmptyRow();
+      scheduleUI.updateSummary();
+      scheduleUI.showErrors([]);
+    },
+    onSaveTpl: () => {
       const { validTasks, messages } = collectAndValidateTemplate();
       if (messages.length) {
-        showErrors(messages);
+        scheduleUI.showErrors(messages);
         showToast('Проверь поля — есть ошибки');
       } else {
-        showErrors([]);
+        scheduleUI.showErrors([]);
       }
-
       if (validTasks.length > 0) {
         setTemplate(scheduleCurrentWeekday, validTasks);
         showToast('Шаблон сохранён');
         console.info('[planner] schedule: template saved for', scheduleCurrentWeekday);
-      } else {
-        console.warn('[planner] schedule: nothing to save (invalid/empty)');
       }
-    });
-    btnSaveTpl.dataset.bound = '1';
-  }
-
-  if (btnApplyTemplate && !btnApplyTemplate.dataset.bound) {
-    btnApplyTemplate.addEventListener('click', () => {
+    },
+    onApplyTpl: () => {
       const { validTasks, messages } = collectAndValidateTemplate();
       if (messages.length) {
-        showErrors(messages);
+        scheduleUI.showErrors(messages);
         showToast('Не могу применить — есть ошибки');
         return;
       }
@@ -598,7 +417,6 @@ function renderScheduleEditor() {
         showToast('Шаблон пустой');
         return;
       }
-
       const dateKey = state.selectedDate;
       const existing = getTasksForDate(dateKey);
       const hasData = Array.isArray(existing) && existing.length > 0;
@@ -614,65 +432,41 @@ function renderScheduleEditor() {
       showToast('Шаблон применён к выбранной дате');
       console.info('[planner] schedule: template applied to', dateKey);
       switchView('dashboard');
-    });
-    btnApplyTemplate.dataset.bound = '1';
-  }
+    }
+  });
 
-  if (!scheduleListEl.dataset.summaryBound) {
-    scheduleListEl.addEventListener('input', (e) => {
-      if (e.target && e.target.tagName === 'INPUT') updateScheduleSummary();
-    });
-    scheduleListEl.dataset.summaryBound = '1';
-  }
+  // 2) первичный рендер строк текущего дня недели
+  const rows = getTemplate(scheduleCurrentWeekday);
+  scheduleUI.renderRows(rows);
+  scheduleUI.updateSummary();
+  scheduleUI.showErrors([]);
 }
 
 /* ==============================
-   Календарь
+   Календарь — оркестрация (DOM в ui.calendarUI)
    ============================== */
 
-function weekdayMonFirst(date) {
-  const js = date.getDay(); // 0..6, 0=Вс
-  return js === 0 ? 7 : js; // 1..7, 1=Пн
-}
-
 function renderCalendar() {
-  if (!calGridEl || calYear == null || calMonth == null) return;
+  if (calYear == null || calMonth == null) return;
 
   const label = new Date(calYear, calMonth, 1).toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long'
   });
-  if (calLabelEl) calLabelEl.textContent = label;
+  calendarUI.setLabel(label);
 
   const selectedKey = state.selectedDate;
   const todayKey = toDateKey(getToday());
 
-  const firstDay = new Date(calYear, calMonth, 1);
-  const firstWeekday = weekdayMonFirst(firstDay);
-  const leading = firstWeekday - 1;
-  const totalCells = 42;
-  const startDate = new Date(calYear, calMonth, 1 - leading);
-
-  calGridEl.innerHTML = '';
-
-  for (let i = 0; i < totalCells; i++) {
-    const d = addDays(startDate, i);
-    const key = toDateKey(d);
-
-    const cell = document.createElement('div');
-    cell.className = 'calendar-cell';
-    if (d.getMonth() !== calMonth) cell.classList.add('outside');
-    if (key === todayKey) cell.classList.add('today');
-    if (key === selectedKey) cell.classList.add('selected');
-
-    cell.textContent = String(d.getDate());
-    cell.addEventListener('click', () => {
-      setSelectedDate(key);
-      switchView('dashboard');
-    });
-
-    calGridEl.appendChild(cell);
-  }
+  calendarUI.drawGrid(
+    { year: calYear, month: calMonth, selectedKey, todayKey },
+    {
+      onSelectDate: (dateKey) => {
+        setSelectedDate(dateKey);
+        switchView('dashboard');
+      }
+    }
+  );
 }
 
 function openCalendarForSelectedDate() {
@@ -681,23 +475,18 @@ function openCalendarForSelectedDate() {
   calMonth = base.getMonth();
   renderCalendar();
 
-  if (calPrevBtn && !calPrevBtn.dataset.bound) {
-    calPrevBtn.addEventListener('click', () => {
+  calendarUI.bindNav({
+    onPrev: () => {
       if (calMonth === 0) { calMonth = 11; calYear -= 1; }
       else { calMonth -= 1; }
       renderCalendar();
-    });
-    calPrevBtn.dataset.bound = '1';
-  }
-
-  if (calNextBtn && !calNextBtn.dataset.bound) {
-    calNextBtn.addEventListener('click', () => {
+    },
+    onNext: () => {
       if (calMonth === 11) { calMonth = 0; calYear += 1; }
       else { calMonth += 1; }
       renderCalendar();
-    });
-    calNextBtn.dataset.bound = '1';
-  }
+    }
+  });
 }
 
 /* ==============================
