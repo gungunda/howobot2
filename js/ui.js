@@ -1,6 +1,6 @@
 // js/ui.js
 // Презентационный слой: DOM для дашборда, календаря и редактора расписания.
-// Этап 4: добавлены кнопки "Править"/"Удалить" и inline-форма редактирования.
+// Этап 4: inline-редактор и удаление. Исправлено: устойчивый режим редактирования через options.editingId.
 'use strict';
 
 /* ==============================
@@ -46,8 +46,9 @@ export function renderStats(totals, eta) {
  * renderTasks
  * tasks: { id, title, minutesPlanned, donePercent, isDone, _virtual? }[]
  * handlers: { onToggle, onBump, onEditStart, onEditSave, onEditCancel, onDelete }
+ * options: { editingId?: string }
  */
-export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
+export function renderTasks(tasks = [], handlers = {}, dayLabel = '', options = {}) {
   const dashboard = document.querySelector('[data-view="dashboard"]');
   if (!dashboard) {
     console.warn('[ui] dashboard view not found: [data-view="dashboard"]');
@@ -71,7 +72,9 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
     return;
   }
 
-  const items = (tasks || []).map(t => taskItemHTML(t));
+  const editingId = options?.editingId ?? null;
+
+  const items = (tasks || []).map(t => taskItemHTML(t, editingId));
   const empty =
     dashboard.querySelector('[data-empty]') ||
     dashboard.querySelector('.empty');
@@ -118,8 +121,6 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
     }
 
     if (act === 'edit') {
-      // Включаем inline-редактирование (DOM-уровень)
-      startInlineEdit(row);
       handlers.onEditStart?.(id);
       return;
     }
@@ -131,8 +132,7 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
 
     if (act === 'save-edit') {
       const { title, minutes } = grabInlineValues(row);
-      if (title.trim() === '' || minutes < 0) {
-        // простая валидация на UI
+      if (title.trim() === '' || !Number.isFinite(minutes) || minutes < 0) {
         const titleInput = row.querySelector('[data-edit-title]');
         const minInput = row.querySelector('[data-edit-minutes]');
         if (titleInput) titleInput.classList.toggle('invalid', title.trim() === '');
@@ -152,7 +152,31 @@ export function renderTasks(tasks = [], handlers = {}, dayLabel = '') {
 
 /* ===== helpers: карточка, inline-форма ===== */
 
-function taskItemHTML(t) {
+function taskItemHTML(t, editingId) {
+  const isEditing = editingId && t.id === editingId;
+  if (isEditing) {
+    const safeTitle = escAttr(t.title ?? '');
+    const safeMinutes = String(Math.max(0, Math.floor(Number(t.minutesPlanned ?? 0))));
+    return `
+      <div class="task-item editing" data-id="${esc(t.id)}">
+        <div class="task-edit">
+          <label>
+            <span>Название</span>
+            <input type="text" data-edit-title value="${safeTitle}" />
+          </label>
+          <label>
+            <span>Минуты</span>
+            <input type="number" min="0" step="1" data-edit-minutes value="${safeMinutes}" />
+          </label>
+          <div class="task-controls">
+            <button type="button" class="btn primary" data-act="save-edit">Сохранить</button>
+            <button type="button" class="btn" data-act="cancel-edit">Отменить</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   const dp = clampPercent(t.donePercent);
   const checked = (t.isDone || dp >= 100) ? 'checked' : '';
   const badge = t._virtual ? '<span class="badge">из шаблона</span>' : '';
@@ -164,33 +188,8 @@ function taskItemHTML(t) {
       <div class="task-controls">
         <button type="button" class="btn" data-act="bump" data-delta="-10">−10%</button>
         <button type="button" class="btn" data-act="bump" data-delta="+10">+10%</button>
-        <button type="button" class="btn" data-act="edit">✏️ Править</button>
-        <button type="button" class="btn danger" data-act="delete">🗑️ Удалить</button>
-      </div>
-    </div>
-  `;
-}
-
-function startInlineEdit(rowEl) {
-  if (!rowEl) return;
-  const title = rowEl.querySelector('.task-title')?.textContent?.replace(' из шаблона','').trim() || '';
-  const minText = rowEl.querySelector('.task-minutes')?.textContent || '';
-  const minutes = parseInt((minText.match(/(\d+)\s*мин/) || [0,0])[1], 10) || 0;
-
-  rowEl.classList.add('editing');
-  rowEl.innerHTML = `
-    <div class="task-edit">
-      <label>
-        <span>Название</span>
-        <input type="text" data-edit-title value="${escAttr(title)}" />
-      </label>
-      <label>
-        <span>Минуты</span>
-        <input type="number" min="0" step="1" data-edit-minutes value="${minutes}" />
-      </label>
-      <div class="task-controls">
-        <button type="button" class="btn primary" data-act="save-edit">Сохранить</button>
-        <button type="button" class="btn" data-act="cancel-edit">Отменить</button>
+        <button type="button" class="btn" data-act="edit">✏️</button>
+        <button type="button" class="btn danger" data-act="delete">🗑️</button>
       </div>
     </div>
   `;
@@ -211,8 +210,6 @@ const scheduleListEl = document.querySelector('[data-schedule-list]');
 const btnAddRow = document.querySelector('[data-schedule-add]');
 const btnSaveTpl = document.querySelector('[data-schedule-save]');
 const btnApplyTemplate = document.querySelector('[data-apply-template]');
-const elSchedCount = document.querySelector('[data-sched-count]');
-const elSchedTotal = document.querySelector('[data-sched-total]');
 const scheduleView = document.querySelector('[data-view="schedule"]');
 
 function ensureErrorBanner() {

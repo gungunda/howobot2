@@ -1,6 +1,7 @@
 // js/app.js
 // Контроллер/оркестратор: state, роутинг, бизнес-логика.
-// Этап 4: правка/удаление задач. D+1 логика сохранена.
+// Этап 4: правка/удаление задач. Исправлено: устойчивый inline-редактор через editingTaskId.
+// D+1 логика сохранена.
 'use strict';
 
 /* ==============================
@@ -39,6 +40,7 @@ let state = null;
 let scheduleCurrentWeekday = 'mon';
 let calYear  = null;
 let calMonth = null;
+let editingTaskId = null; // <-- текущая редактируемая задача (устойчивый inline)
 
 /* ==============================
    Helpers (UI)
@@ -105,6 +107,7 @@ function getTasksForDate(dateKey) {
 function setSelectedDate(dateKey) {
   const d = parseDateKey(dateKey);
   state.selectedDate = toDateKey(d);
+  editingTaskId = null; // при смене даты выходим из редактирования
   saveState(state);
   if (state.currentView === 'dashboard') renderAll();
 }
@@ -125,6 +128,7 @@ function switchView(viewName) {
     return;
   }
   state.currentView = viewName;
+  editingTaskId = null; // при смене вью — сбрасываем редактирование
   saveState(state);
   setActiveNav(viewName);
   showOnly(viewName);
@@ -345,10 +349,11 @@ function renderAll() {
       onBump: handleBumpPercent,
       onEditStart: handleEditStart,
       onEditSave: handleEditSave,
-      onEditCancel: () => renderAll(),
+      onEditCancel: () => { editingTaskId = null; renderAll(); },
       onDelete: handleDeleteTask
     },
-    makeDayLabel(dateKey)
+    makeDayLabel(dateKey),
+    { editingId: editingTaskId } // <-- сообщаем вью, какую карточку рисовать в режиме редактирования
   );
 }
 
@@ -356,22 +361,26 @@ function renderAll() {
    Этап 4 — Правка/удаление
    ============================== */
 
-/** Начало редактирования: если день виртуальный — материализуем D+1, затем перерисовываем. */
+/** Начало редактирования: если день виртуальный — материализуем D+1, затем устанавливаем editingTaskId и перерисовываем. */
 function handleEditStart(id) {
   const dateKey = state.selectedDate;
-  const tasks = getTasksForDate(dateKey);
+  let tasks = getTasksForDate(dateKey);
 
   if (tasks.length > 0) {
-    // уже материализовано — просто перерисуем в режиме редактирования
+    // уже материализовано — просто зафиксируем, что редактируем этот id
+    editingTaskId = id;
     renderAll();
     return;
   }
-  // материализуем D+1, чтобы был объект задачи с реальным id
+
+  // материализуем D+1, найдём реальный id по (title, minutesPlanned)
   const effective = getEffectiveTasks(dateKey);
   const target = effective.find((t) => t.id === id);
   if (target && target._virtual) {
     applyTemplateToDate(target._weekdayKey, dateKey);
-    saveState(state);
+    tasks = getTasksForDate(dateKey);
+    const real = tasks.find((t) => t.title === target.title && t.minutesPlanned === target.minutesPlanned);
+    editingTaskId = real ? real.id : null;
     renderAll();
   }
 }
@@ -391,6 +400,8 @@ function handleEditSave(id, payload) {
     if (t && t._virtual) {
       applyTemplateToDate(t._weekdayKey, dateKey);
       tasks = getTasksForDate(dateKey);
+      const real = tasks.find((x) => x.title === t.title && x.minutesPlanned === t.minutesPlanned);
+      if (real) id = real.id;
     }
   }
 
@@ -404,6 +415,7 @@ function handleEditSave(id, payload) {
     real.meta.deviceId = deviceId;
     saveState(state);
   }
+  editingTaskId = null; // закрываем редактор
   renderAll();
 }
 
@@ -420,25 +432,25 @@ function handleDeleteTask(id) {
     if (t && t._virtual) {
       applyTemplateToDate(t._weekdayKey, dateKey);
       tasks = getTasksForDate(dateKey);
+      const real = tasks.find((x) => x.title === t.title && x.minutesPlanned === t.minutesPlanned);
+      if (real) id = real.id;
     }
   }
 
   const idx = tasks.findIndex((t) => t.id === id);
   if (idx !== -1) {
-    // при желании можно было бы логировать факт удаления где-то отдельно;
-    // но по ТЗ просто удаляем из дня
-    // проставим мету перед удалением (не сохранится вместе с задачей, но порядок действий корректен)
+    // обновим мету перед удалением (для консистентности)
     const nowISO = new Date().toISOString();
     tasks[idx].meta = { ...(tasks[idx].meta || {}), updatedAt: nowISO, userAction: 'deleted', deviceId };
 
     tasks.splice(idx, 1);
-
     // если список пуст — удаляем ключ дня полностью
     if (tasks.length === 0) {
       delete state.days[dateKey];
     }
     saveState(state);
   }
+  editingTaskId = null; // на всякий
   renderAll();
 }
 
